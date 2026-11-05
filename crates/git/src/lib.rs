@@ -172,6 +172,23 @@ impl CliGit {
         combine(out, "config safe.directory")
     }
 
+    /// Übernimmt den Windows/NTFS-Dateibesitz für den aktuellen Benutzer via `icacls`.
+    pub fn take_ownership(&self, repo: &Path) -> Result<String, GitError> {
+        if cfg!(windows) {
+            let p = repo.to_string_lossy().to_string();
+            let user = std::env::var("USERNAME").unwrap_or_else(|_| "CURRENT_USER".into());
+            let out = Command::new("icacls")
+                .args([&p, "/setowner", &user, "/T", "/C", "/Q"])
+                .output()?;
+            combine(out, "icacls /setowner")
+        } else {
+            let out = Command::new("chown")
+                .args(["-R", ":", &repo.to_string_lossy()])
+                .output()?;
+            combine(out, "chown")
+        }
+    }
+
     pub fn remote_origin(&self, repo: &Path) -> Option<String> {
         let u = self.run(repo, &["config", "--get", "remote.origin.url"]).ok()?;
         let t = u.trim();

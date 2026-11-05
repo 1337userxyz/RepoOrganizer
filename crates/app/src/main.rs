@@ -766,6 +766,7 @@ fn run_actions(ui: &MainWindow, state: &Shared, jobs: Vec<(String, PathBuf, Stri
                     "stash" => git.stash(&path),
                     "stash_pop" => git.stash_pop(&path),
                     "trust" => git.trust_directory(&path),
+                    "take_ownership" => git.take_ownership(&path),
                     "commit" => git.stage_all(&path).and_then(|_| git.commit(&path, &msg)),
                     "commit_push" => git.stage_all(&path).and_then(|_| git.commit(&path, &msg)).and_then(|_| git.push(&path)),
                     "set_remote" => git.set_remote(&path, &msg),

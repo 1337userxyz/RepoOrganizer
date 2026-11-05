@@ -1035,8 +1035,12 @@ export component MainWindow inherits Window {
                                                 vertical-alignment: center;
                                             }
                                             Button {
-                                                text: "Als sicheres Verzeichnis zulassen (safe.directory)";
+                                                text: "Als sicher zulassen (safe.directory)";
                                                 clicked => { root.location-action(loc.id, "trust"); }
+                                            }
+                                            Button {
+                                                text: "Besitz übernehmen (Ownership)";
+                                                clicked => { root.location-action(loc.id, "take_ownership"); }
                                             }
                                         }
                                         // Zeile 3 (nur wenn uncommittete Änderungen vorliegen): Commit & Schnell-Push
