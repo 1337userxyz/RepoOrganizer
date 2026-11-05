@@ -1,0 +1,11 @@
+[package]
+name = "repoorganizer-git"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+repoorganizer-core = { version = "0.1.0", path = "../core" }
+thiserror = "2.0.21"
+
+[dev-dependencies]
+tempfile = "3.27.0"

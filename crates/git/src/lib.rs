@@ -1,0 +1,289 @@
+//! Git-CLI-Backend: Status, Ahead/Behind, Last-Fetch/Pull.
+use repoorganizer_core::model::{Snapshot, Status};
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+mod parse;
+pub mod facts;
+pub mod scan;
+pub use parse::{parse_status_v2, StatusInfo};
+
+#[derive(Debug, thiserror::Error)]
+pub enum GitError {
+    #[error("Git konnte nicht gestartet werden: {0}")]
+    Spawn(#[from] std::io::Error),
+    #[error("git {args} fehlgeschlagen: {stderr}")]
+    Failed { args: String, stderr: String },
+}
+
+/// Austauschbares Backend (CLI heute, evtl. libgit2 später).
+pub trait GitBackend: Send + Sync {
+    fn status(&self, repo: &Path) -> Result<StatusInfo, GitError>;
+    fn snapshot(&self, location_id: &str, repo: &Path) -> Snapshot;
+}
+
+pub struct CliGit {
+    pub git_path: PathBuf,
+}
+
+impl Default for CliGit {
+    fn default() -> Self {
+        Self { git_path: "git".into() }
+    }
+}
+
+impl CliGit {
+    pub fn new(git_path: Option<&str>) -> Self {
+        Self { git_path: git_path.map(PathBuf::from).unwrap_or_else(|| "git".into()) }
+    }
+
+    fn run(&self, repo: &Path, args: &[&str]) -> Result<String, GitError> {
+        let out = Command::new(&self.git_path).arg("-C").arg(repo).args(args).output()?;
+        if out.status.success() {
+            Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+        } else {
+            Err(GitError::Failed { args: args.join(" "), stderr: String::from_utf8_lossy(&out.stderr).trim().into() })
+        }
+    }
+
+    /// Commits, die `a` gegenüber `b` voraus bzw. zurück ist: (links, rechts).
+    pub fn left_right(&self, repo: &Path, a: &str, b: &str) -> Result<(u32, u32), GitError> {
+        let out = self.run(repo, &["rev-list", "--left-right", "--count", &format!("{a}...{b}")])?;
+        parse::parse_left_right(&out).ok_or(GitError::Failed { args: "rev-list".into(), stderr: format!("unerwartete Ausgabe: {out}") })
+    }
+
+    pub fn stash_count(&self, repo: &Path) -> u32 {
+        self.run(repo, &["stash", "list"]).map(|s| s.lines().count() as u32).unwrap_or(0)
+    }
+
+    /// mtime von `.git/FETCH_HEAD` (Unix-Sekunden).
+    pub fn last_fetch(&self, repo: &Path) -> Option<i64> {
+        let dir = self.run(repo, &["rev-parse", "--git-dir"]).ok()?;
+        let dir = repo.join(dir.trim());
+        mtime(&dir.join("FETCH_HEAD"))
+    }
+
+    /// Autorzeit des letzten Commits (Unix-Sekunden).
+    pub fn last_commit(&self, repo: &Path) -> Option<i64> {
+        self.run(repo, &["log", "-1", "--format=%ct"]).ok()?.trim().parse().ok()
+    }
+
+    /// Gesamtanzahl Commits auf HEAD.
+    pub fn commit_count(&self, repo: &Path) -> u32 {
+        self.run(repo, &["rev-list", "--count", "HEAD"]).ok().and_then(|s| s.trim().parse().ok()).unwrap_or(0)
+    }
+
+    /// Anzahl getrackter Dateien im Arbeitsbaum.
+    pub fn file_count(&self, repo: &Path) -> u32 {
+        self.run(repo, &["ls-files"]).map(|s| s.lines().count() as u32).unwrap_or(0)
+    }
+
+    /// Zeitpunkt des letzten Pulls aus dem Reflog von HEAD (Eintrag `pull`).
+    pub fn last_pull(&self, repo: &Path) -> Option<i64> {
+        let out = self.run(repo, &["reflog", "show", "--date=unix", "--format=%gd|%gs", "HEAD"]).ok()?;
+        parse::parse_last_pull(&out)
+    }
+}
+
+/// Wie `pull` Änderungen integriert.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PullMode {
+    #[default]
+    FfOnly,
+    Rebase,
+    Merge,
+}
+
+/// Pull ist bei `Diverged`/`Dirty` blockiert (mit Hinweistext).
+pub fn guard_pull(s: &Status) -> Result<(), String> {
+    match s {
+        Status::Diverged => Err("Pull blockiert: Standort ist divergiert (erst manuell auflösen).".into()),
+        Status::Dirty => Err("Pull blockiert: uncommittete Änderungen vorhanden.".into()),
+        Status::Unavailable | Status::NotARepo | Status::Error(_) => Err("Standort nicht verfügbar.".into()),
+        _ => Ok(()),
+    }
+}
+
+pub fn guard_push(s: &Status) -> Result<(), String> {
+    match s {
+        Status::Diverged => Err("Push blockiert: Standort ist divergiert.".into()),
+        Status::Unavailable | Status::NotARepo | Status::Error(_) => Err("Standort nicht verfügbar.".into()),
+        _ => Ok(()),
+    }
+}
+
+impl CliGit {
+    pub fn fetch(&self, repo: &Path) -> Result<String, GitError> {
+        self.run_all(repo, &["fetch", "--prune"])
+    }
+
+    pub fn pull(&self, repo: &Path, mode: PullMode) -> Result<String, GitError> {
+        let flag = match mode {
+            PullMode::FfOnly => "--ff-only",
+            PullMode::Rebase => "--rebase",
+            PullMode::Merge => "--no-rebase",
+        };
+        self.run_all(repo, &["pull", flag])
+    }
+
+    pub fn push(&self, repo: &Path) -> Result<String, GitError> {
+        self.run_all(repo, &["push"])
+    }
+
+    pub fn stage(&self, repo: &Path, paths: &[&str]) -> Result<String, GitError> {
+        let mut a = vec!["add", "--"];
+        a.extend(paths);
+        self.run_all(repo, &a)
+    }
+
+    pub fn stage_all(&self, repo: &Path) -> Result<String, GitError> {
+        self.run_all(repo, &["add", "-A"])
+    }
+
+    pub fn unstage(&self, repo: &Path, paths: &[&str]) -> Result<String, GitError> {
+        let mut a = vec!["restore", "--staged", "--"];
+        a.extend(paths);
+        self.run_all(repo, &a)
+    }
+
+    pub fn commit(&self, repo: &Path, message: &str) -> Result<String, GitError> {
+        if message.trim().is_empty() {
+            return Err(GitError::Failed { args: "commit".into(), stderr: "Commit-Nachricht fehlt".into() });
+        }
+        self.run_all(repo, &["commit", "-m", message])
+    }
+
+    pub fn stash(&self, repo: &Path) -> Result<String, GitError> {
+        self.run_all(repo, &["stash", "push", "--include-untracked"])
+    }
+
+    pub fn stash_pop(&self, repo: &Path) -> Result<String, GitError> {
+        self.run_all(repo, &["stash", "pop"])
+    }
+
+    pub fn switch_branch(&self, repo: &Path, branch: &str) -> Result<String, GitError> {
+        self.run_all(repo, &["switch", branch])
+    }
+
+    pub fn trust_directory(&self, repo: &Path) -> Result<String, GitError> {
+        let p = repo.to_string_lossy().replace('\\', "/");
+        let out = Command::new(&self.git_path).args(["config", "--global", "--add", "safe.directory", &p]).output()?;
+        combine(out, "config safe.directory")
+    }
+
+    pub fn clone_repo(&self, url: &str, dest: &Path) -> Result<String, GitError> {
+        let out = Command::new(&self.git_path).arg("clone").arg(url).arg(dest).output()?;
+        combine(out, "clone")
+    }
+
+    /// Wie `run`, liefert aber stdout+stderr (git schreibt Fortschritt nach stderr).
+    fn run_all(&self, repo: &Path, args: &[&str]) -> Result<String, GitError> {
+        let out = Command::new(&self.git_path).arg("-C").arg(repo).args(args).output()?;
+        combine(out, &args.join(" "))
+    }
+}
+
+fn combine(out: std::process::Output, args: &str) -> Result<String, GitError> {
+    let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)).trim().to_string();
+    if out.status.success() {
+        Ok(text)
+    } else {
+        Err(GitError::Failed { args: args.into(), stderr: text })
+    }
+}
+
+fn mtime(p: &Path) -> Option<i64> {
+    let m = std::fs::metadata(p).ok()?.modified().ok()?;
+    Some(m.duration_since(UNIX_EPOCH).ok()?.as_secs() as i64)
+}
+
+fn now() -> i64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+}
+
+impl GitBackend for CliGit {
+    fn status(&self, repo: &Path) -> Result<StatusInfo, GitError> {
+        let out = self.run(repo, &["status", "--porcelain=v2", "--branch"])?;
+        Ok(parse_status_v2(&out))
+    }
+
+    fn snapshot(&self, location_id: &str, repo: &Path) -> Snapshot {
+        let mut snap = Snapshot {
+            location_id: location_id.into(),
+            last_checked: Some(now()),
+            last_fetch: None,
+            last_pull: None,
+            last_commit: None,
+            commit_count: 0,
+            file_count: 0,
+            size_kb: 0,
+            branch: None,
+            ahead: 0,
+            behind: 0,
+            dirty_files: 0,
+            untracked: 0,
+            stash_count: 0,
+            head_sha: None,
+            state: Status::Unavailable,
+        };
+        if !repo.is_dir() {
+            return snap;
+        }
+        if !repo.join(".git").exists() {
+            snap.state = Status::NotARepo;
+            return snap;
+        }
+        match self.status(repo) {
+            Ok(s) => {
+                snap.branch = s.branch.clone();
+                snap.head_sha = s.head_sha.clone();
+                snap.ahead = s.ahead;
+                snap.behind = s.behind;
+                snap.dirty_files = s.changed;
+                snap.untracked = s.untracked;
+                snap.stash_count = self.stash_count(repo);
+                snap.last_fetch = self.last_fetch(repo);
+                snap.last_pull = self.last_pull(repo);
+                snap.last_commit = self.last_commit(repo);
+                snap.commit_count = self.commit_count(repo);
+                snap.file_count = self.file_count(repo);
+                snap.size_kb = self.git_size(repo) / 1024;
+                snap.state = if s.changed + s.untracked > 0 {
+                    Status::Dirty
+                } else {
+                    match (s.ahead, s.behind) {
+                        (0, 0) => Status::UpToDate,
+                        (a, 0) => Status::Ahead(a),
+                        (0, b) => Status::Behind(b),
+                        _ => Status::Diverged,
+                    }
+                };
+            }
+            Err(e) => snap.state = Status::Error(e.to_string()),
+        }
+        snap
+    }
+}
+
+/// Snapshots mehrerer Standorte parallel (je Standort ein Thread, max. `jobs` gleichzeitig).
+pub fn snapshots_parallel(git: &dyn GitBackend, items: &[(String, PathBuf)], jobs: usize) -> Vec<Snapshot> {
+    let jobs = jobs.max(1);
+    let mut result = Vec::with_capacity(items.len());
+    for chunk in items.chunks(jobs) {
+        std::thread::scope(|s| {
+            let handles: Vec<_> = chunk.iter().map(|(id, p)| s.spawn(move || git.snapshot(id, p))).collect();
+            for h in handles {
+                result.push(h.join().expect("Snapshot-Thread abgestürzt"));
+            }
+        });
+    }
+    result
+}
+
+#[cfg(test)]
+mod tests;
+
+
+
+

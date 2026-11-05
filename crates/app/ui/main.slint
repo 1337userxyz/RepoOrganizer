@@ -1,0 +1,1103 @@
+import { Button, CheckBox, LineEdit, ListView, Palette, ScrollView } from "std-widgets.slint";
+
+export struct MappingRow {
+    windows: string,
+    unix: string,
+}
+
+export struct CheckRow {
+    id: string,
+    label: string,
+    enabled: bool,
+}
+
+export struct ScanRow {
+    path: string,
+    remote: string,
+    kind-text: string,
+    kind: int,
+    checked: bool,
+    known: bool,
+}
+
+export struct BarItem {
+    label: string,
+    value: int,
+    frac: float,
+}
+
+export struct HeatItem {
+    col: int,
+    row: int,
+    level: int,
+}
+
+export struct ViewRow {
+    key: string,
+    name: string,
+    count: int,
+    selected: bool,
+    custom: bool,
+}
+
+export struct InfoRow {
+    label: string,
+    text: string,
+    advice: string,
+    kind: int,
+}
+
+export struct TaskRow {
+    title: string,
+    state: int,
+    detail: string,
+}
+
+export struct LocationRow {
+    id: string,
+    can-pull: bool,
+    can-push: bool,
+    can-commit: bool,
+    label: string,
+    path: string,
+    role: string,
+    status: string,
+    error-msg: string,
+    kind: int,
+    branch: string,
+    ahead: int,
+    behind: int,
+    dirty: int,
+    stashes: int,
+    fetched: string,
+    pulled: string,
+    other-os: bool,
+}
+
+export struct RepoRow {
+    id: string,
+    name: string,
+    remote: string,
+    tags: string,
+    status: string,
+    error-msg: string,
+    kind: int,
+    branch: string,
+    sync-info: string,
+    last-commit: string,
+    commits: string,
+    files: string,
+    size: string,
+    locations: int,
+    favorite: bool,
+    has-drift: bool,
+}
+
+global Kinds {
+    pure public function kind-color(kind: int) -> color {
+        return kind == 0 ? #2e9e5b : kind == 1 ? #2a7fd4 : kind == 2 ? #d98e04 : kind == 3 ? #e04347 : #808080;
+    }
+}
+
+component Badge inherits Rectangle {
+    in property <string> text;
+    in property <int> kind;
+    background: Kinds.kind-color(kind).with-alpha(0.18);
+    border-radius: 10px;
+    border-color: Kinds.kind-color(kind);
+    border-width: 1px;
+    min-width: label.preferred-width + 14px;
+    height: 20px;
+    label := Text {
+        text: root.text;
+        font-size: 11px;
+        font-weight: 600;
+        color: Kinds.kind-color(root.kind);
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+component ColSep inherits Rectangle {
+    width: 1px;
+    background: #80808022;
+}
+
+component BarChart inherits Rectangle {
+    in property <[BarItem]> items;
+    in property <color> bar-color: #2a7fd4;
+    height: 110px;
+    HorizontalLayout {
+        spacing: 3px;
+        for it in root.items: VerticalLayout {
+            Rectangle {
+                Rectangle {
+                    y: parent.height * (1 - it.frac);
+                    height: parent.height * it.frac;
+                    width: parent.width;
+                    background: root.bar-color;
+                    border-radius: 2px;
+                }
+                Text {
+                    y: Math.max(0px, parent.height * (1 - it.frac) - 12px);
+                    width: parent.width;
+                    text: it.value > 0 ? it.value : "";
+                    font-size: 9px;
+                    horizontal-alignment: center;
+                }
+            }
+            Text { text: it.label; font-size: 9px; horizontal-alignment: center; overflow: elide; height: 12px; opacity: 0.7; }
+        }
+    }
+}
+
+component Heatmap inherits Rectangle {
+    in property <[HeatItem]> cells;
+    width: 53 * 7px;
+    height: 7 * 7px;
+    for c in root.cells: Rectangle {
+        x: c.col * 7px;
+        y: c.row * 7px;
+        width: 6px;
+        height: 6px;
+        border-radius: 1px;
+        background: c.level == 0 ? #80808030 : c.level == 1 ? #2e9e5b55 : c.level == 2 ? #2e9e5b88 : c.level == 3 ? #2e9e5bbb : #2e9e5b;
+    }
+}
+
+component AuthorBars inherits Rectangle {
+    in property <[BarItem]> items;
+    height: max(20px, root.items.length * 22px);
+    VerticalLayout {
+        spacing: 2px;
+        for a in root.items: Rectangle {
+            height: 20px;
+            background: #80808014;
+            border-radius: 3px;
+            Rectangle {
+                x: 0;
+                width: parent.width * a.frac;
+                background: #2a7fd455;
+                border-radius: 3px;
+            }
+            Text { x: 6px; text: a.label; font-size: 11px; vertical-alignment: center; overflow: elide; width: parent.width - 50px; }
+            Text { x: parent.width - 40px; width: 34px; text: a.value; font-size: 11px; horizontal-alignment: right; vertical-alignment: center; }
+        }
+    }
+}
+
+component Tile inherits Rectangle {
+    in property <string> caption;
+    in property <int> value;
+    in property <int> kind: 4;
+    in property <bool> active: false;
+    callback clicked();
+    background: Kinds.kind-color(kind).with-alpha(active ? 0.26 : (ta.has-hover ? 0.18 : 0.10));
+    border-radius: 8px;
+    border-width: active ? 2px : 1px;
+    border-color: active ? Kinds.kind-color(kind) : Kinds.kind-color(kind).with-alpha(0.25);
+    min-width: 80px;
+    height: 46px;
+    ta := TouchArea { clicked => { root.clicked(); } }
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 8px;
+        Text { text: root.value; font-size: 19px; font-weight: 700; color: Kinds.kind-color(root.kind); vertical-alignment: center; }
+        Text { text: root.caption; font-size: 12px; opacity: 0.85; vertical-alignment: center; }
+    }
+}
+
+export component ScanWindow inherits Window {
+    title: "RepoOrganizer – Scan-Assistent";
+    preferred-width: 780px;
+    preferred-height: 540px;
+
+    in property <[ScanRow]> scan-rows;
+    in property <bool> scanning;
+    in property <string> scan-progress;
+
+    callback scan-start(string, string);
+    callback scan-cancel();
+    callback scan-toggle(int);
+    callback scan-adopt();
+    callback close-window();
+
+    VerticalLayout {
+        padding: 18px;
+        spacing: 10px;
+        HorizontalLayout {
+            spacing: 8px;
+            Text { text: "Scan-Assistent"; font-size: 19px; font-weight: 700; horizontal-stretch: 1; vertical-alignment: center; }
+            Button { text: "Schließen"; clicked => { root.close-window(); } }
+        }
+        Text {
+            text: "Wurzelordner (mehrere mit ; trennen) und maximale Tiefe wählen. Gefundene Git-Repositories werden automatisch mit der Konfiguration abgeglichen.";
+            font-size: 12px;
+            opacity: 0.75;
+            wrap: word-wrap;
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            roots-edit := LineEdit { placeholder-text: "z. B. R:\\git; D:\\projekte"; horizontal-stretch: 1; }
+            Text { text: "Tiefe:"; font-size: 12px; vertical-alignment: center; }
+            depth-edit := LineEdit { text: "4"; width: 60px; input-type: number; }
+            Button {
+                text: root.scanning ? "Abbrechen" : "Scannen";
+                primary: !root.scanning;
+                enabled: root.scanning || roots-edit.text != "";
+                clicked => {
+                    if (root.scanning) { root.scan-cancel(); } else { root.scan-start(roots-edit.text, depth-edit.text); }
+                }
+            }
+        }
+        Text { text: root.scan-progress; font-size: 12px; opacity: 0.75; overflow: elide; }
+        Rectangle {
+            vertical-stretch: 1;
+            border-width: 1px;
+            border-color: #80808030;
+            border-radius: 6px;
+            background: #80808008;
+            ListView {
+                for row[i] in root.scan-rows: Rectangle {
+                    height: 46px;
+                    background: ta2.has-hover ? #80808018 : (Math.mod(i, 2) == 1 ? #8080800a : transparent);
+                    ta2 := TouchArea { enabled: !row.known; clicked => { root.scan-toggle(i); } }
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        spacing: 10px;
+                        CheckBox { checked: row.checked; enabled: !row.known; toggled => { root.scan-toggle(i); } }
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            Text { text: row.path; font-weight: 600; overflow: elide; }
+                            Text { text: row.remote == "" ? "(kein origin)" : row.remote; font-size: 11px; opacity: 0.65; overflow: elide; }
+                        }
+                        Badge { text: row.kind-text; kind: row.kind; y: (parent.height - self.height) / 2; }
+                    }
+                }
+            }
+        }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button {
+                text: "Auswahl übernehmen";
+                enabled: !root.scanning && root.scan-rows.length > 0;
+                primary: true;
+                clicked => { root.scan-adopt(); }
+            }
+        }
+    }
+}
+
+export component SettingsWindow inherits Window {
+    title: "RepoOrganizer – Programmeinstellungen";
+    preferred-width: 840px;
+    preferred-height: 560px;
+
+    in-out property <string> cfg-theme;
+    in-out property <string> cfg-git-path;
+    in-out property <string> cfg-refresh-secs;
+    in-out property <string> cfg-timeout-secs;
+    in-out property <string> cfg-stale-days;
+    in-out property <string> cfg-shared-path;
+    in property <[MappingRow]> cfg-mappings;
+    in property <[CheckRow]> cfg-checks;
+
+    callback theme-changed(string);
+    callback save-settings(string, string, string, string, string, string);
+    callback add-mapping(string, string);
+    callback remove-mapping(int);
+    callback toggle-health-check(string);
+    callback close-window();
+
+    VerticalLayout {
+        padding: 18px;
+        spacing: 12px;
+        HorizontalLayout {
+            spacing: 8px;
+            Text { text: "Programmeinstellungen"; font-size: 19px; font-weight: 700; horizontal-stretch: 1; vertical-alignment: center; }
+            Button {
+                text: "Speichern & Schließen";
+                primary: true;
+                clicked => {
+                    root.save-settings(root.cfg-theme, root.cfg-git-path, root.cfg-refresh-secs, root.cfg-timeout-secs, root.cfg-stale-days, root.cfg-shared-path);
+                    root.close-window();
+                }
+            }
+            Button { text: "Schließen"; clicked => { root.close-window(); } }
+        }
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                spacing: 12px;
+                alignment: start;
+                HorizontalLayout {
+                    spacing: 18px;
+                    VerticalLayout {
+                        spacing: 8px;
+                        horizontal-stretch: 1;
+                        Text { text: "Allgemein (local.toml)"; font-weight: 700; font-size: 14px; }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: "Darstellung (Theme):"; width: 190px; vertical-alignment: center; }
+                            Button {
+                                text: "System";
+                                primary: root.cfg-theme == "system";
+                                clicked => {
+                                    root.cfg-theme = "system";
+                                    Palette.color-scheme = ColorScheme.unknown;
+                                    root.theme-changed("system");
+                                }
+                            }
+                            Button {
+                                text: "Hell";
+                                primary: root.cfg-theme == "light";
+                                clicked => {
+                                    root.cfg-theme = "light";
+                                    Palette.color-scheme = ColorScheme.light;
+                                    root.theme-changed("light");
+                                }
+                            }
+                            Button {
+                                text: "Dunkel";
+                                primary: root.cfg-theme == "dark";
+                                clicked => {
+                                    root.cfg-theme = "dark";
+                                    Palette.color-scheme = ColorScheme.dark;
+                                    root.theme-changed("dark");
+                                }
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: "Git-Pfad (leer = git):"; width: 190px; vertical-alignment: center; }
+                            LineEdit { text <=> root.cfg-git-path; placeholder-text: "git"; horizontal-stretch: 1; }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: "Auto-Refresh (Sek., 0=aus):"; width: 190px; vertical-alignment: center; }
+                            LineEdit { text <=> root.cfg-refresh-secs; input-type: number; width: 110px; }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: "Timeout Erreichbarkeit (Sek.):"; width: 190px; vertical-alignment: center; }
+                            LineEdit { text <=> root.cfg-timeout-secs; input-type: number; width: 110px; }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: "Veraltet nach (Tage):"; width: 190px; vertical-alignment: center; }
+                            LineEdit { text <=> root.cfg-stale-days; input-type: number; width: 110px; }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: "Pfad zu repos.toml:"; width: 190px; vertical-alignment: center; }
+                            LineEdit { text <=> root.cfg-shared-path; horizontal-stretch: 1; }
+                        }
+                        Text { text: "Pfad-Mappings Windows ↔ Linux/macOS (repos.toml)"; font-weight: 700; font-size: 14px; }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            mw := LineEdit { placeholder-text: "Windows, z. B. R:\\"; horizontal-stretch: 1; }
+                            mu := LineEdit { placeholder-text: "Unix, z. B. /mnt/r/"; horizontal-stretch: 1; }
+                            Button {
+                                text: "Hinzufügen";
+                                enabled: mw.text != "" && mu.text != "";
+                                clicked => { root.add-mapping(mw.text, mu.text); mw.text = ""; mu.text = ""; }
+                            }
+                        }
+                        for m[idx] in root.cfg-mappings: HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: m.windows + "  ↔  " + m.unix; vertical-alignment: center; horizontal-stretch: 1; }
+                            Button { text: "Entfernen"; clicked => { root.remove-mapping(idx); } }
+                        }
+                    }
+                    VerticalLayout {
+                        spacing: 6px;
+                        width: 320px;
+                        Text { text: "Aktive Health-Checks"; font-weight: 700; font-size: 14px; }
+                        for chk in root.cfg-checks: CheckBox {
+                            text: chk.label;
+                            checked: chk.enabled;
+                            toggled => { root.toggle-health-check(chk.id); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component MainWindow inherits Window {
+    title: "RepoOrganizer";
+    preferred-width: 1360px;
+    preferred-height: 840px;
+
+    in property <[RepoRow]> repos;
+    in property <[LocationRow]> locations;
+    in property <string> selected-id;
+    in property <string> selected-name;
+    in property <string> selected-remote;
+    in property <string> selected-tags;
+    in property <string> task-text: "Bereit";
+    in property <bool> busy;
+    in property <int> n-repos;
+    in property <int> n-online;
+    in property <int> n-offline;
+    in property <int> n-behind;
+    in property <int> n-ahead;
+    in property <int> n-dirty;
+    in property <string> error-text;
+    in property <[TaskRow]> tasks;
+    in property <[ViewRow]> views;
+    in property <[InfoRow]> drift-rows;
+    in property <[InfoRow]> health-rows;
+    in property <string> health-text;
+    in property <int> health-kind;
+    in property <bool> health-busy;
+    in property <int> n-drift;
+    in property <int> n-health;
+    in-out property <int> detail-tab;
+    in property <string> stat-text;
+    in property <[BarItem]> stat-weeks;
+    in property <[BarItem]> stat-months;
+    in property <[HeatItem]> stat-heat;
+    in property <[BarItem]> stat-authors;
+    in property <bool> stat-busy;
+    in-out property <bool> saving-view;
+    in property <string> selected-notes;
+    in property <bool> selected-favorite;
+    in property <string> active-view;
+    in-out property <bool> tasks-open: false;
+
+    public function apply-theme(t: string) {
+        Palette.color-scheme = t == "dark" ? ColorScheme.dark : t == "light" ? ColorScheme.light : ColorScheme.unknown;
+    }
+
+    callback refresh();
+    callback select(string);
+    callback filter-changed(string);
+    callback add-repo(string, string);
+    callback location-action(string, string);
+    callback commit(string, string);
+    callback commit-and-push(string, string);
+    callback fetch-all(string);
+    callback load-stats(string, bool);
+    callback select-view(string);
+    callback add-view(string, string, string, string);
+    callback delete-view(string);
+    callback health-check(string);
+    callback open-scan();
+    callback open-settings();
+    callback clone-repo(string, string);
+    callback clone-location(string, string);
+    callback link-location(string, string);
+    callback open-in(string, string);
+    callback delete-location(string);
+    callback toggle-favorite(string);
+    callback save-repo-meta(string, string, string);
+    callback delete-repo(string);
+
+    property <bool> adding: false;
+
+    HorizontalLayout {
+        // Sidebar
+        Rectangle {
+            width: 210px;
+            background: #80808014;
+            VerticalLayout {
+                padding: 12px;
+                spacing: 8px;
+                Text { text: "RepoOrganizer"; font-size: 18px; font-weight: 700; }
+                Button { text: "Scan-Assistent…"; clicked => { root.open-scan(); } }
+                Button { text: "Einstellungen…"; clicked => { root.open-settings(); } }
+                Text { text: "Ansichten"; font-weight: 600; font-size: 12px; opacity: 0.8; }
+                ListView {
+                    vertical-stretch: 1;
+                    for v in root.views: Rectangle {
+                        height: 28px;
+                        border-radius: 5px;
+                        background: v.selected ? #2a7fd433 : (vta.has-hover ? #80808022 : transparent);
+                        vta := TouchArea { clicked => { root.select-view(v.key); } }
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            spacing: 6px;
+                            Text { text: v.name; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                            Text { text: v.count; font-size: 11px; opacity: 0.7; vertical-alignment: center; }
+                            if v.custom: Text {
+                                text: "×";
+                                vertical-alignment: center;
+                                TouchArea { clicked => { root.delete-view(v.name); } }
+                            }
+                        }
+                    }
+                }
+                Button { text: "Ansicht speichern…"; clicked => { root.saving-view = !root.saving-view; } }
+                if root.saving-view: VerticalLayout {
+                    spacing: 4px;
+                    vn := LineEdit { placeholder-text: "Name"; }
+                    vt := LineEdit { placeholder-text: "Tags (a, b)"; }
+                    vs := LineEdit { placeholder-text: "Status: behind, dirty, …"; }
+                    vd := LineEdit { placeholder-text: "älter als N Tage"; input-type: number; }
+                    Button {
+                        text: "Speichern";
+                        enabled: vn.text != "";
+                        clicked => { root.add-view(vn.text, vt.text, vs.text, vd.text); vn.text = ""; vt.text = ""; vs.text = ""; vd.text = ""; root.saving-view = false; }
+                    }
+                }
+            }
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            // Oben: Filter-Kacheln + Suche + DataGrid (volle Breite)
+            VerticalLayout {
+                padding: 12px;
+                spacing: 8px;
+                vertical-stretch: 1;
+
+                HorizontalLayout {
+                    spacing: 6px;
+                    Tile { caption: "Repos"; value: root.n-repos; active: root.active-view == ""; clicked => { root.select-view(""); } }
+                    Tile { caption: "Online"; value: root.n-online; kind: 0; active: root.active-view == "b:online"; clicked => { root.select-view("b:online"); } }
+                    Tile { caption: "Offline"; value: root.n-offline; kind: 4; active: root.active-view == "b:offline"; clicked => { root.select-view("b:offline"); } }
+                    Tile { caption: "Behind"; value: root.n-behind; kind: 1; active: root.active-view == "b:behind"; clicked => { root.select-view("b:behind"); } }
+                    Tile { caption: "Ahead"; value: root.n-ahead; kind: 1; active: root.active-view == "b:unpushed"; clicked => { root.select-view("b:unpushed"); } }
+                    Tile { caption: "Dirty"; value: root.n-dirty; kind: 2; active: root.active-view == "b:dirty"; clicked => { root.select-view("b:dirty"); } }
+                    Tile { caption: "Drift"; value: root.n-drift; kind: 2; active: root.active-view == "b:drift"; clicked => { root.select-view("b:drift"); } }
+                    Tile { caption: "Health"; value: root.n-health; kind: 3; active: root.active-view == "b:health"; clicked => { root.select-view("b:health"); } }
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    LineEdit {
+                        placeholder-text: "Suchen (Name, Tag, Remote)…";
+                        edited(t) => { root.filter-changed(t); }
+                    }
+                    Button { text: root.busy ? "Aktualisiere…" : "Aktualisieren"; enabled: !root.busy; clicked => { root.refresh(); } }
+                    Button { text: "Alle fetchen"; enabled: !root.busy; clicked => { root.fetch-all(""); } }
+                    Button { text: "Repo hinzufügen"; clicked => { root.adding = !root.adding; } }
+                }
+
+                if root.adding: HorizontalLayout {
+                    spacing: 8px;
+                    name-edit := LineEdit { placeholder-text: "Name"; horizontal-stretch: 1; }
+                    path-edit := LineEdit { placeholder-text: "Lokaler Pfad des Klons"; horizontal-stretch: 3; }
+                    url-edit := LineEdit { placeholder-text: "Remote-URL (nur Klonen)"; horizontal-stretch: 3; }
+                    Button {
+                        text: "Klonen";
+                        enabled: url-edit.text != "" && path-edit.text != "";
+                        clicked => {
+                            root.clone-repo(url-edit.text, path-edit.text);
+                            url-edit.text = "";
+                            path-edit.text = "";
+                            root.adding = false;
+                        }
+                    }
+                    Button {
+                        text: "Verknüpfen";
+                        enabled: name-edit.text != "" && path-edit.text != "";
+                        clicked => {
+                            root.add-repo(name-edit.text, path-edit.text);
+                            name-edit.text = "";
+                            path-edit.text = "";
+                            root.adding = false;
+                        }
+                    }
+                }
+
+                if root.error-text != "": Text { text: root.error-text; color: #e04347; wrap: word-wrap; }
+
+                // Repository-DataGrid (Tabellenkopf + strukturierte Zeilen)
+                Rectangle {
+                    vertical-stretch: 1;
+                    border-width: 1px;
+                    border-color: #80808030;
+                    border-radius: 6px;
+                    background: #80808008;
+                    clip: true;
+
+                    VerticalLayout {
+                        // Tabellenkopf
+                        Rectangle {
+                            height: 30px;
+                            background: #80808022;
+                            HorizontalLayout {
+                                padding-left: 10px;
+                                padding-right: 10px;
+                                spacing: 8px;
+                                Text { text: "Repository"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 185px; vertical-alignment: center; }
+                                ColSep {}
+                                Text { text: "Status"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 92px; vertical-alignment: center; }
+                                ColSep {}
+                                Text { text: "Branch"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 95px; vertical-alignment: center; }
+                                ColSep {}
+                                Text { text: "Sync / Baum"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 110px; vertical-alignment: center; }
+                                ColSep {}
+                                Text { text: "Letzter Commit ↓"; font-size: 11px; font-weight: 700; color: #2a7fd4; width: 170px; vertical-alignment: center; }
+                                ColSep {}
+                                Text { text: "Commits"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 64px; horizontal-alignment: right; vertical-alignment: center; }
+                                ColSep {}
+                                Text { text: "Dateien"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 64px; horizontal-alignment: right; vertical-alignment: center; }
+                                ColSep {}
+                                Text { text: "Größe"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 72px; horizontal-alignment: right; vertical-alignment: center; }
+                                ColSep {}
+                                Text { text: "Orte"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 38px; horizontal-alignment: center; vertical-alignment: center; }
+                                ColSep {}
+                                Text { text: "Hinweis / Fehler / Remote"; font-size: 11px; font-weight: 700; opacity: 0.85; horizontal-stretch: 1; vertical-alignment: center; }
+                            }
+                            Rectangle {
+                                y: parent.height - 1px;
+                                height: 1px;
+                                width: parent.width;
+                                background: #80808030;
+                            }
+                        }
+
+                        if root.repos.length == 0: Rectangle {
+                            vertical-stretch: 1;
+                            Text {
+                                text: "Keine Repositories in dieser Ansicht.";
+                                opacity: 0.6;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        ListView {
+                            vertical-stretch: 1;
+                            for repo[idx] in root.repos: Rectangle {
+                                height: 36px;
+                                background: repo.id == root.selected-id
+                                    ? #2a7fd42e
+                                    : (rta.has-hover ? #80808020 : (Math.mod(idx, 2) == 1 ? #8080800c : transparent));
+
+                                // Linker Auswahlbalken bei aktivem Repo
+                                if repo.id == root.selected-id: Rectangle {
+                                    x: 0;
+                                    y: 0;
+                                    width: 3px;
+                                    height: parent.height;
+                                    background: #2a7fd4;
+                                }
+
+                                rta := TouchArea {
+                                    clicked => { root.select(repo.id); }
+                                }
+
+                                HorizontalLayout {
+                                    padding-left: 10px;
+                                    padding-right: 10px;
+                                    spacing: 8px;
+
+                                    // 1. Repository Name
+                                    Text {
+                                        text: (repo.favorite ? "★ " : "") + repo.name;
+                                        font-weight: repo.id == root.selected-id ? 700 : 600;
+                                        font-size: 12px;
+                                        width: 185px;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                    ColSep {}
+
+                                    // 2. Status Badge
+                                    Rectangle {
+                                        width: 92px;
+                                        Badge {
+                                            x: 0;
+                                            y: (parent.height - self.height) / 2;
+                                            text: repo.status;
+                                            kind: repo.kind;
+                                        }
+                                    }
+                                    ColSep {}
+
+                                    // 3. Branch
+                                    Text {
+                                        text: repo.branch != "" ? ("⎇ " + repo.branch) : "–";
+                                        font-size: 12px;
+                                        width: 95px;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                    ColSep {}
+
+                                    // 4. Sync / Dirty
+                                    Text {
+                                        text: repo.sync-info;
+                                        font-size: 12px;
+                                        color: repo.kind == 2 ? #d98e04 : (repo.kind == 1 ? #2a7fd4 : Palette.foreground.with-alpha(0.75));
+                                        width: 110px;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                    ColSep {}
+
+                                    // 5. Letzter Commit
+                                    Text {
+                                        text: repo.last-commit;
+                                        font-size: 12px;
+                                        width: 170px;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                    ColSep {}
+
+                                    // 6. Anzahl Commits
+                                    Text {
+                                        text: repo.commits;
+                                        font-size: 12px;
+                                        width: 64px;
+                                        horizontal-alignment: right;
+                                        vertical-alignment: center;
+                                    }
+                                    ColSep {}
+
+                                    // 7. Anzahl Dateien
+                                    Text {
+                                        text: repo.files;
+                                        font-size: 12px;
+                                        width: 64px;
+                                        horizontal-alignment: right;
+                                        vertical-alignment: center;
+                                    }
+                                    ColSep {}
+
+                                    // 8. Größe (.git)
+                                    Text {
+                                        text: repo.size;
+                                        font-size: 12px;
+                                        width: 72px;
+                                        horizontal-alignment: right;
+                                        vertical-alignment: center;
+                                    }
+                                    ColSep {}
+
+                                    // 9. Orte
+                                    Text {
+                                        text: repo.locations;
+                                        font-size: 12px;
+                                        width: 38px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                    ColSep {}
+
+                                    // 10. Hinweis / Fehler / Remote-Feld
+                                    HorizontalLayout {
+                                        horizontal-stretch: 1;
+                                        spacing: 6px;
+                                        if repo.error-msg != "": Rectangle {
+                                            background: #e0434722;
+                                            border-color: #e0434788;
+                                            border-width: 1px;
+                                            border-radius: 4px;
+                                            height: 22px;
+                                            y: (parent.height - self.height) / 2;
+                                            horizontal-stretch: 1;
+                                            Text {
+                                                x: 6px;
+                                                width: parent.width - 12px;
+                                                height: parent.height;
+                                                text: "⚠ " + repo.error-msg;
+                                                font-size: 11px;
+                                                color: #e04347;
+                                                vertical-alignment: center;
+                                                overflow: elide;
+                                            }
+                                        }
+                                        if repo.error-msg == "" && repo.has-drift: Badge {
+                                            text: "⇄ Drift";
+                                            kind: 2;
+                                            y: (parent.height - self.height) / 2;
+                                        }
+                                        if repo.error-msg == "": Text {
+                                            text: (repo.tags != "" ? "[" + repo.tags + "]  " : "") + (repo.remote != "" ? repo.remote : "lokal");
+                                            font-size: 11px;
+                                            opacity: 0.65;
+                                            vertical-alignment: center;
+                                            horizontal-stretch: 1;
+                                            overflow: elide;
+                                        }
+                                    }
+                                }
+
+                                // Untere Zeilentrennlinie
+                                Rectangle {
+                                    y: parent.height - 1px;
+                                    height: 1px;
+                                    width: parent.width;
+                                    background: #80808016;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Unten: Dauerhaft sichtbares Detail-Panel über die volle Breite
+            Rectangle {
+                height: 310px;
+                background: #80808012;
+                border-width: 1px;
+                border-color: #80808028;
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 8px;
+                    // Kopfzeile: Name, Remote, Favorit, Tabs
+                    HorizontalLayout {
+                        spacing: 10px;
+                        Text {
+                            text: root.selected-id != "" ? root.selected-name : "Kein Repository ausgewählt";
+                            font-size: 16px;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                        if root.selected-id != "": Button {
+                            text: root.selected-favorite ? "★" : "☆";
+                            clicked => { root.toggle-favorite(root.selected-id); }
+                        }
+                        Text {
+                            text: root.selected-remote;
+                            font-size: 12px;
+                            opacity: 0.65;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                            overflow: elide;
+                        }
+                        Button { text: "Standorte (" + root.locations.length + ")"; primary: root.detail-tab == 0; clicked => { root.detail-tab = 0; } }
+                        Button { text: "Drift (" + root.drift-rows.length + ")"; primary: root.detail-tab == 1; clicked => { root.detail-tab = 1; } }
+                        Button { text: "Health"; primary: root.detail-tab == 2; clicked => { root.detail-tab = 2; } }
+                        Button { text: "Statistik"; primary: root.detail-tab == 3; clicked => { root.detail-tab = 3; root.load-stats(root.selected-id, false); } }
+                        Button { text: "Meta"; primary: root.detail-tab == 4; clicked => { root.detail-tab = 4; } }
+                    }
+
+                    // Tab 0: Standorte auf voller Breite
+                    if root.detail-tab == 0: VerticalLayout {
+                        spacing: 6px;
+                        vertical-stretch: 1;
+                        ScrollView {
+                            vertical-stretch: 1;
+                            VerticalLayout {
+                                spacing: 6px;
+                                alignment: start;
+                                for loc in root.locations: Rectangle {
+                                    background: #80808016;
+                                    border-radius: 6px;
+                                    opacity: loc.other-os ? 0.5 : 1.0;
+                                    VerticalLayout {
+                                        padding: 8px;
+                                        spacing: 6px;
+                                        // Zeile 1: Standort, Pfad, Status, Öffnen-Buttons & Git-Aktionen
+                                        HorizontalLayout {
+                                            spacing: 8px;
+                                            Badge { text: loc.status; kind: loc.kind; y: (parent.height - self.height) / 2; }
+                                            Text { text: loc.label + " (" + loc.role + ")"; font-weight: 600; vertical-alignment: center; }
+                                            Text { text: loc.path; font-size: 12px; opacity: 0.8; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                                            if loc.branch != "": Text {
+                                                text: "⎇ " + loc.branch + "   ↑" + loc.ahead + " ↓" + loc.behind + "   Δ" + loc.dirty + (loc.stashes > 0 ? "   📦" + loc.stashes : "");
+                                                font-size: 12px;
+                                                vertical-alignment: center;
+                                            }
+                                            Text { text: "Fetch: " + loc.fetched + " · Pull: " + loc.pulled; font-size: 11px; opacity: 0.65; vertical-alignment: center; }
+                                            Button { text: "Fetch"; enabled: !loc.other-os && loc.kind != 4; clicked => { root.location-action(loc.id, "fetch"); } }
+                                            Button { text: "Pull"; enabled: loc.can-pull; clicked => { root.location-action(loc.id, "pull"); } }
+                                            Button { text: "Push"; enabled: loc.can-push; clicked => { root.location-action(loc.id, "push"); } }
+                                            Button { text: "Stash"; enabled: loc.can-commit; clicked => { root.location-action(loc.id, "stash"); } }
+                                            if loc.stashes > 0: Button { text: "Pop (" + loc.stashes + ")"; clicked => { root.location-action(loc.id, "stash_pop"); } }
+                                            Button { text: "Explorer"; enabled: !loc.other-os; clicked => { root.open-in(loc.id, "explorer"); } }
+                                            Button { text: "Terminal"; enabled: !loc.other-os; clicked => { root.open-in(loc.id, "terminal"); } }
+                                            Button { text: "VS Code"; enabled: !loc.other-os; clicked => { root.open-in(loc.id, "code"); } }
+                                            Button { text: "×"; clicked => { root.delete-location(loc.id); } }
+                                        }
+                                        // Zeile 2 (nur bei Fehler): Vollständige Meldung + Direkt-Behebung
+                                        if loc.error-msg != "": HorizontalLayout {
+                                            spacing: 10px;
+                                            Text {
+                                                text: loc.error-msg;
+                                                font-size: 11px;
+                                                color: #e04347;
+                                                wrap: word-wrap;
+                                                horizontal-stretch: 1;
+                                                vertical-alignment: center;
+                                            }
+                                            Button {
+                                                text: "Als sicheres Verzeichnis zulassen (safe.directory)";
+                                                clicked => { root.location-action(loc.id, "trust"); }
+                                            }
+                                        }
+                                        // Zeile 3 (nur wenn uncommittete Änderungen vorliegen): Commit & Schnell-Push
+                                        if loc.can-commit: HorizontalLayout {
+                                            spacing: 6px;
+                                            msg := LineEdit { placeholder-text: "Commit-Nachricht für alle geänderten Dateien (Δ" + loc.dirty + ")…"; horizontal-stretch: 1; }
+                                            Button {
+                                                text: "Commit";
+                                                enabled: msg.text != "";
+                                                clicked => { root.commit(loc.id, msg.text); msg.text = ""; }
+                                            }
+                                            Button {
+                                                text: "Commit & Push";
+                                                primary: true;
+                                                enabled: msg.text != "";
+                                                clicked => { root.commit-and-push(loc.id, msg.text); msg.text = ""; }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if root.selected-id != "": HorizontalLayout {
+                            spacing: 6px;
+                            newloc-edit := LineEdit { placeholder-text: "Weiteren Standort hinzufügen (lokaler Pfad)…"; horizontal-stretch: 1; }
+                            Button {
+                                text: "Verknüpfen";
+                                enabled: newloc-edit.text != "";
+                                clicked => { root.link-location(root.selected-id, newloc-edit.text); newloc-edit.text = ""; }
+                            }
+                            Button {
+                                text: "Klonen";
+                                enabled: newloc-edit.text != "" && root.selected-remote != "";
+                                clicked => { root.clone-location(root.selected-id, newloc-edit.text); newloc-edit.text = ""; }
+                            }
+                            Button { text: "Alle Standorte fetchen"; clicked => { root.fetch-all(root.selected-id); } }
+                        }
+                    }
+
+                    // Tab 1: Drift
+                    if root.detail-tab == 1: VerticalLayout {
+                        spacing: 6px;
+                        vertical-stretch: 1;
+                        Text { text: root.drift-rows.length == 0 ? "Keine Abweichungen zwischen den Standorten." : "Abweichungen zwischen Standorten"; font-weight: 600; }
+                        ListView {
+                            for row in root.drift-rows: Rectangle {
+                                height: 34px;
+                                background: Kinds.kind-color(row.kind).with-alpha(0.12);
+                                border-radius: 6px;
+                                Text { x: 10px; width: parent.width - 20px; text: row.text; color: Kinds.kind-color(row.kind); vertical-alignment: center; font-size: 12px; }
+                            }
+                        }
+                    }
+
+                    // Tab 2: Health
+                    if root.detail-tab == 2: VerticalLayout {
+                        spacing: 6px;
+                        vertical-stretch: 1;
+                        HorizontalLayout {
+                            spacing: 6px;
+                            Text { text: root.health-text; font-weight: 600; color: Kinds.kind-color(root.health-kind); vertical-alignment: center; horizontal-stretch: 1; }
+                            Button { text: root.health-busy ? "Prüfe…" : "Dieses Repo prüfen"; enabled: !root.health-busy && root.selected-id != ""; clicked => { root.health-check(root.selected-id); } }
+                            Button { text: "Alle Repos prüfen"; enabled: !root.health-busy; clicked => { root.health-check(""); } }
+                        }
+                        ListView {
+                            for row in root.health-rows: Rectangle {
+                                height: 36px;
+                                background: Kinds.kind-color(row.kind).with-alpha(0.12);
+                                border-radius: 6px;
+                                HorizontalLayout {
+                                    padding-left: 10px;
+                                    padding-right: 10px;
+                                    spacing: 12px;
+                                    Text { text: row.label + ": " + row.text; color: Kinds.kind-color(row.kind); font-size: 12px; font-weight: 600; vertical-alignment: center; }
+                                    Text { text: "→ " + row.advice; font-size: 12px; opacity: 0.75; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                                }
+                            }
+                        }
+                    }
+
+                    // Tab 3: Statistik
+                    if root.detail-tab == 3: VerticalLayout {
+                        spacing: 6px;
+                        vertical-stretch: 1;
+                        HorizontalLayout {
+                            spacing: 12px;
+                            Text { text: root.stat-text; font-size: 12px; horizontal-stretch: 1; vertical-alignment: center; }
+                            Button { text: root.stat-busy ? "Lade…" : "Neu laden"; enabled: !root.stat-busy && root.selected-id != ""; clicked => { root.load-stats(root.selected-id, true); } }
+                        }
+                        HorizontalLayout {
+                            spacing: 16px;
+                            vertical-stretch: 1;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 4px;
+                                Text { text: "Commits / Woche"; font-size: 11px; font-weight: 600; }
+                                BarChart { items: root.stat-weeks; }
+                            }
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 4px;
+                                Text { text: "Commits / Monat"; font-size: 11px; font-weight: 600; }
+                                BarChart { items: root.stat-months; bar-color: #2e9e5b; }
+                            }
+                            VerticalLayout {
+                                spacing: 4px;
+                                Text { text: "Heatmap (52 Wochen)"; font-size: 11px; font-weight: 600; }
+                                Heatmap { cells: root.stat-heat; }
+                                Text { text: "Top-Autoren"; font-size: 11px; font-weight: 600; }
+                                AuthorBars { items: root.stat-authors; }
+                            }
+                        }
+                    }
+
+                    // Tab 4: Meta
+                    if root.detail-tab == 4: HorizontalLayout {
+                        spacing: 12px;
+                        alignment: start;
+                        Text { text: "Tags:"; font-size: 12px; font-weight: 600; vertical-alignment: center; }
+                        tags-edit := LineEdit { text: root.selected-tags; placeholder-text: "z. B. rust, work"; width: 220px; }
+                        Text { text: "Notizen:"; font-size: 12px; font-weight: 600; vertical-alignment: center; }
+                        notes-edit := LineEdit { text: root.selected-notes; placeholder-text: "Notizen zum Repo…"; horizontal-stretch: 1; }
+                        Button {
+                            text: "Speichern";
+                            primary: true;
+                            enabled: root.selected-id != "";
+                            clicked => { root.save-repo-meta(root.selected-id, tags-edit.text, notes-edit.text); }
+                        }
+                        Button {
+                            text: "Repo entfernen";
+                            enabled: root.selected-id != "";
+                            clicked => { root.delete-repo(root.selected-id); }
+                        }
+                    }
+                }
+            }
+
+            // Kompakter Fußbalken (32px), bei Bedarf aufklappbar
+            Rectangle {
+                height: root.tasks-open ? 140px : 32px;
+                background: #80808018;
+                VerticalLayout {
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    padding-top: 4px;
+                    padding-bottom: 4px;
+                    spacing: 4px;
+                    HorizontalLayout {
+                        height: 24px;
+                        spacing: 8px;
+                        Text { text: root.task-text; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                        Button {
+                            text: root.tasks-open ? "Protokoll ▼ (" + root.tasks.length + ")" : "Protokoll ▲ (" + root.tasks.length + ")";
+                            clicked => { root.tasks-open = !root.tasks-open; }
+                        }
+                    }
+                    if root.tasks-open: ListView {
+                        for task in root.tasks: HorizontalLayout {
+                            height: 20px;
+                            spacing: 8px;
+                            Text {
+                                text: task.state == 0 ? "⏳" : task.state == 1 ? "✔" : "✖";
+                                color: Kinds.kind-color(task.state == 0 ? 1 : task.state == 1 ? 0 : 3);
+                                width: 18px;
+                            }
+                            Text { text: task.title; font-size: 12px; width: 240px; overflow: elide; }
+                            Text { text: task.detail; font-size: 11px; opacity: 0.75; overflow: elide; horizontal-stretch: 1; }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
