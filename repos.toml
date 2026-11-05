@@ -1,0 +1,98 @@
+version = 1
+
+[[repo]]
+id = "configurable-csv-analyzer-rust"
+name = "configurable-csv-analyzer-rust"
+
+[[repo]]
+id = "configurablecsvanalyzer"
+name = "ConfigurableCsvAnalyzer"
+remote_url = "https://github.com/1337userxyz/ConfigurableCsvAnalyzer.git"
+
+[[repo]]
+id = "gpomanagermvvmgui"
+name = "GpoManagerMVVMGui"
+remote_url = "https://github.com/1337userxyz/GpoManagerMVVMGui.git"
+
+[[repo]]
+id = "networkdrivemanager"
+name = "NetworkDriveManager"
+remote_url = "https://github.com/1337userxyz/NetworkDriveManager.git"
+
+[[repo]]
+id = "pwsh7-scripts"
+name = "pwsh7-scripts"
+remote_url = "https://github.com/1337userxyz/pwsh7-scripts.git"
+
+[[repo]]
+id = "repoorganizer"
+name = "RepoOrganizer"
+remote_url = "https://github.com/1337userxyz/RepoOrganizer.git"
+
+[[repo]]
+id = "startrekcomputer"
+name = "StarTrekComputer"
+remote_url = "https://github.com/1337userxyz/StarTrekComputer.git"
+
+[[location]]
+id = "configurable-csv-analyzer-rust-1"
+repo_id = "configurable-csv-analyzer-rust"
+label = "configurable-csv-analyzer-rust"
+role = "primary"
+
+[location.paths]
+windows = 'R:\git\configurable-csv-analyzer-rust'
+
+[[location]]
+id = "configurablecsvanalyzer-1"
+repo_id = "configurablecsvanalyzer"
+label = "ConfigurableCsvAnalyzer"
+role = "primary"
+
+[location.paths]
+windows = 'R:\git\ConfigurableCsvAnalyzer'
+
+[[location]]
+id = "gpomanagermvvmgui-1"
+repo_id = "gpomanagermvvmgui"
+label = "GpoManagerMVVMGui"
+role = "primary"
+
+[location.paths]
+windows = 'R:\git\GpoManagerMVVMGui'
+
+[[location]]
+id = "networkdrivemanager-1"
+repo_id = "networkdrivemanager"
+label = "NetworkDriveManager"
+role = "primary"
+
+[location.paths]
+windows = 'R:\git\NetworkDriveManager'
+
+[[location]]
+id = "pwsh7-scripts-1"
+repo_id = "pwsh7-scripts"
+label = "pwsh7-scripts"
+role = "primary"
+
+[location.paths]
+windows = 'R:\git\pwsh7-scripts'
+
+[[location]]
+id = "repoorganizer-1"
+repo_id = "repoorganizer"
+label = "RepoOrganizer"
+role = "primary"
+
+[location.paths]
+windows = 'R:\git\RepoOrganizer'
+
+[[location]]
+id = "startrekcomputer-1"
+repo_id = "startrekcomputer"
+label = "StarTrekComputer"
+role = "primary"
+
+[location.paths]
+windows = 'R:\git\StarTrekComputer'

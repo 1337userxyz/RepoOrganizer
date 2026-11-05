@@ -1,4 +1,4 @@
-import { Button, CheckBox, LineEdit, ListView, Palette, ScrollView } from "std-widgets.slint";
+import { Button, CheckBox, ComboBox, LineEdit, ListView, Palette, ScrollView } from "std-widgets.slint";
 
 export struct MappingRow {
     windows: string,
@@ -186,28 +186,6 @@ component AuthorBars inherits Rectangle {
     }
 }
 
-component Tile inherits Rectangle {
-    in property <string> caption;
-    in property <int> value;
-    in property <int> kind: 4;
-    in property <bool> active: false;
-    callback clicked();
-    background: Kinds.kind-color(kind).with-alpha(active ? 0.26 : (ta.has-hover ? 0.18 : 0.10));
-    border-radius: 8px;
-    border-width: active ? 2px : 1px;
-    border-color: active ? Kinds.kind-color(kind) : Kinds.kind-color(kind).with-alpha(0.25);
-    min-width: 80px;
-    height: 46px;
-    ta := TouchArea { clicked => { root.clicked(); } }
-    HorizontalLayout {
-        padding-left: 10px;
-        padding-right: 10px;
-        spacing: 8px;
-        Text { text: root.value; font-size: 19px; font-weight: 700; color: Kinds.kind-color(root.kind); vertical-alignment: center; }
-        Text { text: root.caption; font-size: 12px; opacity: 0.85; vertical-alignment: center; }
-    }
-}
-
 export component ScanWindow inherits Window {
     title: "RepoOrganizer – Scan-Assistent";
     preferred-width: 780px;
@@ -216,6 +194,10 @@ export component ScanWindow inherits Window {
     in property <[ScanRow]> scan-rows;
     in property <bool> scanning;
     in property <string> scan-progress;
+
+    public function apply-theme(t: string) {
+        Palette.color-scheme = t == "dark" ? ColorScheme.dark : t == "light" ? ColorScheme.light : ColorScheme.unknown;
+    }
 
     callback scan-start(string, string);
     callback scan-cancel();
@@ -294,17 +276,21 @@ export component ScanWindow inherits Window {
 
 export component SettingsWindow inherits Window {
     title: "RepoOrganizer – Programmeinstellungen";
-    preferred-width: 840px;
-    preferred-height: 560px;
+    preferred-width: 820px;
+    preferred-height: 520px;
 
     in-out property <string> cfg-theme;
+    in-out property <string> cfg-git-user;
     in-out property <string> cfg-git-path;
     in-out property <string> cfg-refresh-secs;
     in-out property <string> cfg-timeout-secs;
     in-out property <string> cfg-stale-days;
-    in-out property <string> cfg-shared-path;
     in property <[MappingRow]> cfg-mappings;
     in property <[CheckRow]> cfg-checks;
+
+    public function apply-theme(t: string) {
+        Palette.color-scheme = t == "dark" ? ColorScheme.dark : t == "light" ? ColorScheme.light : ColorScheme.unknown;
+    }
 
     callback theme-changed(string);
     callback save-settings(string, string, string, string, string, string);
@@ -323,7 +309,7 @@ export component SettingsWindow inherits Window {
                 text: "Speichern & Schließen";
                 primary: true;
                 clicked => {
-                    root.save-settings(root.cfg-theme, root.cfg-git-path, root.cfg-refresh-secs, root.cfg-timeout-secs, root.cfg-stale-days, root.cfg-shared-path);
+                    root.save-settings(root.cfg-theme, root.cfg-git-user, root.cfg-git-path, root.cfg-refresh-secs, root.cfg-timeout-secs, root.cfg-stale-days);
                     root.close-window();
                 }
             }
@@ -348,7 +334,7 @@ export component SettingsWindow inherits Window {
                                 primary: root.cfg-theme == "system";
                                 clicked => {
                                     root.cfg-theme = "system";
-                                    Palette.color-scheme = ColorScheme.unknown;
+                                    root.apply-theme("system");
                                     root.theme-changed("system");
                                 }
                             }
@@ -357,7 +343,7 @@ export component SettingsWindow inherits Window {
                                 primary: root.cfg-theme == "light";
                                 clicked => {
                                     root.cfg-theme = "light";
-                                    Palette.color-scheme = ColorScheme.light;
+                                    root.apply-theme("light");
                                     root.theme-changed("light");
                                 }
                             }
@@ -366,9 +352,18 @@ export component SettingsWindow inherits Window {
                                 primary: root.cfg-theme == "dark";
                                 clicked => {
                                     root.cfg-theme = "dark";
-                                    Palette.color-scheme = ColorScheme.dark;
+                                    root.apply-theme("dark");
                                     root.theme-changed("dark");
                                 }
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: "Git-User / Account:"; width: 190px; vertical-alignment: center; }
+                            LineEdit {
+                                text <=> root.cfg-git-user;
+                                placeholder-text: "z. B. mein-user (leitet https://github.com/<user>/<repo>.git ab)";
+                                horizontal-stretch: 1;
                             }
                         }
                         HorizontalLayout {
@@ -390,11 +385,6 @@ export component SettingsWindow inherits Window {
                             spacing: 8px;
                             Text { text: "Veraltet nach (Tage):"; width: 190px; vertical-alignment: center; }
                             LineEdit { text <=> root.cfg-stale-days; input-type: number; width: 110px; }
-                        }
-                        HorizontalLayout {
-                            spacing: 8px;
-                            Text { text: "Pfad zu repos.toml:"; width: 190px; vertical-alignment: center; }
-                            LineEdit { text <=> root.cfg-shared-path; horizontal-stretch: 1; }
                         }
                         Text { text: "Pfad-Mappings Windows ↔ Linux/macOS (repos.toml)"; font-weight: 700; font-size: 14px; }
                         HorizontalLayout {
@@ -439,15 +429,10 @@ export component MainWindow inherits Window {
     in property <string> selected-id;
     in property <string> selected-name;
     in property <string> selected-remote;
+    in property <string> suggested-remote;
     in property <string> selected-tags;
     in property <string> task-text: "Bereit";
     in property <bool> busy;
-    in property <int> n-repos;
-    in property <int> n-online;
-    in property <int> n-offline;
-    in property <int> n-behind;
-    in property <int> n-ahead;
-    in property <int> n-dirty;
     in property <string> error-text;
     in property <[TaskRow]> tasks;
     in property <[ViewRow]> views;
@@ -456,8 +441,6 @@ export component MainWindow inherits Window {
     in property <string> health-text;
     in property <int> health-kind;
     in property <bool> health-busy;
-    in property <int> n-drift;
-    in property <int> n-health;
     in-out property <int> detail-tab;
     in property <string> stat-text;
     in property <[BarItem]> stat-weeks;
@@ -471,6 +454,15 @@ export component MainWindow inherits Window {
     in property <string> active-view;
     in-out property <bool> tasks-open: false;
 
+    // Spalten-Filter & Sortierung im DataGrid-Kopf
+    in-out property <int> col-repo-filter: 0;
+    in-out property <int> col-status-filter: 0;
+    in property <[string]> branch-options: ["Branch: Alle"];
+    in-out property <string> col-branch-filter: "Branch: Alle";
+    in-out property <int> col-sync-filter: 0;
+    in-out property <int> col-commit-filter: 0;
+    in-out property <int> col-remote-filter: 0;
+
     public function apply-theme(t: string) {
         Palette.color-scheme = t == "dark" ? ColorScheme.dark : t == "light" ? ColorScheme.light : ColorScheme.unknown;
     }
@@ -478,10 +470,16 @@ export component MainWindow inherits Window {
     callback refresh();
     callback select(string);
     callback filter-changed(string);
-    callback add-repo(string, string);
+    callback column-filter-changed();
+    callback derive-name(string) -> string;
+    callback derive-url(string, string) -> string;
+    callback add-repo(string, string, string);
     callback location-action(string, string);
     callback commit(string, string);
     callback commit-and-push(string, string);
+    callback publish-remote(string, string, bool);
+    callback publish-github(string, bool);
+    callback open-url(string);
     callback fetch-all(string);
     callback load-stats(string, bool);
     callback select-view(string);
@@ -496,10 +494,11 @@ export component MainWindow inherits Window {
     callback open-in(string, string);
     callback delete-location(string);
     callback toggle-favorite(string);
-    callback save-repo-meta(string, string, string);
+    callback save-repo-meta(string, string, string, string);
     callback delete-repo(string);
 
     property <bool> adding: false;
+    property <bool> has-col-filter: root.col-repo-filter != 0 || root.col-status-filter != 0 || root.col-sync-filter != 0 || root.col-commit-filter >= 2 || root.col-remote-filter != 0 || (root.col-branch-filter != "" && root.col-branch-filter != "Branch: Alle");
 
     HorizontalLayout {
         // Sidebar
@@ -552,29 +551,29 @@ export component MainWindow inherits Window {
 
         VerticalLayout {
             horizontal-stretch: 1;
-            // Oben: Filter-Kacheln + Suche + DataGrid (volle Breite)
+            // Oben: Suche + Aktionsleiste + DataGrid mit Filter-ComboBoxen im Header
             VerticalLayout {
                 padding: 12px;
                 spacing: 8px;
                 vertical-stretch: 1;
 
                 HorizontalLayout {
-                    spacing: 6px;
-                    Tile { caption: "Repos"; value: root.n-repos; active: root.active-view == ""; clicked => { root.select-view(""); } }
-                    Tile { caption: "Online"; value: root.n-online; kind: 0; active: root.active-view == "b:online"; clicked => { root.select-view("b:online"); } }
-                    Tile { caption: "Offline"; value: root.n-offline; kind: 4; active: root.active-view == "b:offline"; clicked => { root.select-view("b:offline"); } }
-                    Tile { caption: "Behind"; value: root.n-behind; kind: 1; active: root.active-view == "b:behind"; clicked => { root.select-view("b:behind"); } }
-                    Tile { caption: "Ahead"; value: root.n-ahead; kind: 1; active: root.active-view == "b:unpushed"; clicked => { root.select-view("b:unpushed"); } }
-                    Tile { caption: "Dirty"; value: root.n-dirty; kind: 2; active: root.active-view == "b:dirty"; clicked => { root.select-view("b:dirty"); } }
-                    Tile { caption: "Drift"; value: root.n-drift; kind: 2; active: root.active-view == "b:drift"; clicked => { root.select-view("b:drift"); } }
-                    Tile { caption: "Health"; value: root.n-health; kind: 3; active: root.active-view == "b:health"; clicked => { root.select-view("b:health"); } }
-                }
-
-                HorizontalLayout {
                     spacing: 8px;
                     LineEdit {
                         placeholder-text: "Suchen (Name, Tag, Remote)…";
                         edited(t) => { root.filter-changed(t); }
+                    }
+                    if root.has-col-filter: Button {
+                        text: "Spaltenfilter zurücksetzen";
+                        clicked => {
+                            root.col-repo-filter = 0;
+                            root.col-status-filter = 0;
+                            root.col-branch-filter = "Branch: Alle";
+                            root.col-sync-filter = 0;
+                            if (root.col-commit-filter >= 2) { root.col-commit-filter = 0; }
+                            root.col-remote-filter = 0;
+                            root.column-filter-changed();
+                        }
                     }
                     Button { text: root.busy ? "Aktualisiere…" : "Aktualisieren"; enabled: !root.busy; clicked => { root.refresh(); } }
                     Button { text: "Alle fetchen"; enabled: !root.busy; clicked => { root.fetch-all(""); } }
@@ -583,14 +582,33 @@ export component MainWindow inherits Window {
 
                 if root.adding: HorizontalLayout {
                     spacing: 8px;
-                    name-edit := LineEdit { placeholder-text: "Name"; horizontal-stretch: 1; }
-                    path-edit := LineEdit { placeholder-text: "Lokaler Pfad des Klons"; horizontal-stretch: 3; }
-                    url-edit := LineEdit { placeholder-text: "Remote-URL (nur Klonen)"; horizontal-stretch: 3; }
+                    name-edit := LineEdit {
+                        placeholder-text: "Name";
+                        horizontal-stretch: 1;
+                        edited(n) => {
+                            url-edit.text = root.derive-url(n, path-edit.text);
+                        }
+                    }
+                    path-edit := LineEdit {
+                        placeholder-text: "Lokaler Pfad des Klons (z. B. R:\\git\\Projekt)";
+                        horizontal-stretch: 3;
+                        edited(p) => {
+                            if (name-edit.text == "") {
+                                name-edit.text = root.derive-name(p);
+                            }
+                            url-edit.text = root.derive-url(name-edit.text, p);
+                        }
+                    }
+                    url-edit := LineEdit {
+                        placeholder-text: "Remote-URL (wird automatisch aus Git-User abgeleitet)";
+                        horizontal-stretch: 3;
+                    }
                     Button {
                         text: "Klonen";
                         enabled: url-edit.text != "" && path-edit.text != "";
                         clicked => {
                             root.clone-repo(url-edit.text, path-edit.text);
+                            name-edit.text = "";
                             url-edit.text = "";
                             path-edit.text = "";
                             root.adding = false;
@@ -600,8 +618,9 @@ export component MainWindow inherits Window {
                         text: "Verknüpfen";
                         enabled: name-edit.text != "" && path-edit.text != "";
                         clicked => {
-                            root.add-repo(name-edit.text, path-edit.text);
+                            root.add-repo(name-edit.text, path-edit.text, url-edit.text);
                             name-edit.text = "";
+                            url-edit.text = "";
                             path-edit.text = "";
                             root.adding = false;
                         }
@@ -610,7 +629,7 @@ export component MainWindow inherits Window {
 
                 if root.error-text != "": Text { text: root.error-text; color: #e04347; wrap: word-wrap; }
 
-                // Repository-DataGrid (Tabellenkopf + strukturierte Zeilen)
+                // Repository-DataGrid (Spaltenköpfe als Filter-ComboBoxen + strukturierte Zeilen)
                 Rectangle {
                     vertical-stretch: 1;
                     border-width: 1px;
@@ -620,33 +639,66 @@ export component MainWindow inherits Window {
                     clip: true;
 
                     VerticalLayout {
-                        // Tabellenkopf
+                        // Tabellenkopf mit Filter-ComboBoxen
                         Rectangle {
-                            height: 30px;
+                            height: 36px;
                             background: #80808022;
                             HorizontalLayout {
-                                padding-left: 10px;
-                                padding-right: 10px;
-                                spacing: 8px;
-                                Text { text: "Repository"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 185px; vertical-alignment: center; }
+                                padding-left: 8px;
+                                padding-right: 8px;
+                                padding-top: 3px;
+                                padding-bottom: 3px;
+                                spacing: 6px;
+
+                                ComboBox {
+                                    width: 185px;
+                                    model: ["Repo: Alle", "★ Favoriten"];
+                                    current-index <=> root.col-repo-filter;
+                                    selected => { root.column-filter-changed(); }
+                                }
                                 ColSep {}
-                                Text { text: "Status"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 92px; vertical-alignment: center; }
+                                ComboBox {
+                                    width: 112px;
+                                    model: ["Status: Alle", "Aktuell", "Geändert", "Voraus", "Hinter", "Divergiert", "Fehler", "Offline"];
+                                    current-index <=> root.col-status-filter;
+                                    selected => { root.column-filter-changed(); }
+                                }
                                 ColSep {}
-                                Text { text: "Branch"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 95px; vertical-alignment: center; }
+                                ComboBox {
+                                    width: 110px;
+                                    model: root.branch-options;
+                                    current-value <=> root.col-branch-filter;
+                                    selected => { root.column-filter-changed(); }
+                                }
                                 ColSep {}
-                                Text { text: "Sync / Baum"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 110px; vertical-alignment: center; }
+                                ComboBox {
+                                    width: 120px;
+                                    model: ["Sync: Alle", "✓ Sauber", "Δ Geändert", "↑ Voraus", "↓ Hinter", "📦 Stash"];
+                                    current-index <=> root.col-sync-filter;
+                                    selected => { root.column-filter-changed(); }
+                                }
                                 ColSep {}
-                                Text { text: "Letzter Commit ↓"; font-size: 11px; font-weight: 700; color: #2a7fd4; width: 170px; vertical-alignment: center; }
+                                ComboBox {
+                                    width: 170px;
+                                    model: ["Commit: Neueste ↓", "Commit: Älteste ↑", "Heute (24h)", "Letzte 7 Tage", "Letzte 30 Tage", "> 30 Tage alt"];
+                                    current-index <=> root.col-commit-filter;
+                                    selected => { root.column-filter-changed(); }
+                                }
                                 ColSep {}
-                                Text { text: "Commits"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 64px; horizontal-alignment: right; vertical-alignment: center; }
+                                Text { text: "Commits"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 62px; horizontal-alignment: right; vertical-alignment: center; }
                                 ColSep {}
-                                Text { text: "Dateien"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 64px; horizontal-alignment: right; vertical-alignment: center; }
+                                Text { text: "Dateien"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 62px; horizontal-alignment: right; vertical-alignment: center; }
                                 ColSep {}
-                                Text { text: "Größe"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 72px; horizontal-alignment: right; vertical-alignment: center; }
+                                Text { text: "Größe"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 70px; horizontal-alignment: right; vertical-alignment: center; }
                                 ColSep {}
-                                Text { text: "Orte"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 38px; horizontal-alignment: center; vertical-alignment: center; }
+                                Text { text: "Orte"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 36px; horizontal-alignment: center; vertical-alignment: center; }
                                 ColSep {}
-                                Text { text: "Hinweis / Fehler / Remote"; font-size: 11px; font-weight: 700; opacity: 0.85; horizontal-stretch: 1; vertical-alignment: center; }
+                                ComboBox {
+                                    horizontal-stretch: 1;
+                                    model: ["Hinweis / Remote: Alle", "💻 Nur lokal (kein Remote)", "🌐 Online (mit Remote)", "⚠ Mit Fehler", "⇄ Mit Drift"];
+                                    current-index <=> root.col-remote-filter;
+                                    selected => { root.column-filter-changed(); }
+                                }
                             }
                             Rectangle {
                                 y: parent.height - 1px;
@@ -659,7 +711,7 @@ export component MainWindow inherits Window {
                         if root.repos.length == 0: Rectangle {
                             vertical-stretch: 1;
                             Text {
-                                text: "Keine Repositories in dieser Ansicht.";
+                                text: "Keine Repositories entsprechen den aktuellen Filtern.";
                                 opacity: 0.6;
                                 horizontal-alignment: center;
                                 vertical-alignment: center;
@@ -674,7 +726,6 @@ export component MainWindow inherits Window {
                                     ? #2a7fd42e
                                     : (rta.has-hover ? #80808020 : (Math.mod(idx, 2) == 1 ? #8080800c : transparent));
 
-                                // Linker Auswahlbalken bei aktivem Repo
                                 if repo.id == root.selected-id: Rectangle {
                                     x: 0;
                                     y: 0;
@@ -688,9 +739,9 @@ export component MainWindow inherits Window {
                                 }
 
                                 HorizontalLayout {
-                                    padding-left: 10px;
-                                    padding-right: 10px;
-                                    spacing: 8px;
+                                    padding-left: 8px;
+                                    padding-right: 8px;
+                                    spacing: 6px;
 
                                     // 1. Repository Name
                                     Text {
@@ -705,7 +756,7 @@ export component MainWindow inherits Window {
 
                                     // 2. Status Badge
                                     Rectangle {
-                                        width: 92px;
+                                        width: 112px;
                                         Badge {
                                             x: 0;
                                             y: (parent.height - self.height) / 2;
@@ -719,7 +770,7 @@ export component MainWindow inherits Window {
                                     Text {
                                         text: repo.branch != "" ? ("⎇ " + repo.branch) : "–";
                                         font-size: 12px;
-                                        width: 95px;
+                                        width: 110px;
                                         vertical-alignment: center;
                                         overflow: elide;
                                     }
@@ -730,7 +781,7 @@ export component MainWindow inherits Window {
                                         text: repo.sync-info;
                                         font-size: 12px;
                                         color: repo.kind == 2 ? #d98e04 : (repo.kind == 1 ? #2a7fd4 : Palette.foreground.with-alpha(0.75));
-                                        width: 110px;
+                                        width: 120px;
                                         vertical-alignment: center;
                                         overflow: elide;
                                     }
@@ -750,7 +801,7 @@ export component MainWindow inherits Window {
                                     Text {
                                         text: repo.commits;
                                         font-size: 12px;
-                                        width: 64px;
+                                        width: 62px;
                                         horizontal-alignment: right;
                                         vertical-alignment: center;
                                     }
@@ -760,7 +811,7 @@ export component MainWindow inherits Window {
                                     Text {
                                         text: repo.files;
                                         font-size: 12px;
-                                        width: 64px;
+                                        width: 62px;
                                         horizontal-alignment: right;
                                         vertical-alignment: center;
                                     }
@@ -770,7 +821,7 @@ export component MainWindow inherits Window {
                                     Text {
                                         text: repo.size;
                                         font-size: 12px;
-                                        width: 72px;
+                                        width: 70px;
                                         horizontal-alignment: right;
                                         vertical-alignment: center;
                                     }
@@ -780,7 +831,7 @@ export component MainWindow inherits Window {
                                     Text {
                                         text: repo.locations;
                                         font-size: 12px;
-                                        width: 38px;
+                                        width: 36px;
                                         horizontal-alignment: center;
                                         vertical-alignment: center;
                                     }
@@ -814,8 +865,13 @@ export component MainWindow inherits Window {
                                             kind: 2;
                                             y: (parent.height - self.height) / 2;
                                         }
+                                        if repo.error-msg == "" && repo.remote == "": Badge {
+                                            text: "💻 Lokal";
+                                            kind: 4;
+                                            y: (parent.height - self.height) / 2;
+                                        }
                                         if repo.error-msg == "": Text {
-                                            text: (repo.tags != "" ? "[" + repo.tags + "]  " : "") + (repo.remote != "" ? repo.remote : "lokal");
+                                            text: (repo.tags != "" ? "[" + repo.tags + "]  " : "") + (repo.remote != "" ? repo.remote : "Kein Remote verbunden");
                                             font-size: 11px;
                                             opacity: 0.65;
                                             vertical-alignment: center;
@@ -825,7 +881,6 @@ export component MainWindow inherits Window {
                                     }
                                 }
 
-                                // Untere Zeilentrennlinie
                                 Rectangle {
                                     y: parent.height - 1px;
                                     height: 1px;
@@ -840,7 +895,7 @@ export component MainWindow inherits Window {
 
             // Unten: Dauerhaft sichtbares Detail-Panel über die volle Breite
             Rectangle {
-                height: 310px;
+                height: 320px;
                 background: #80808012;
                 border-width: 1px;
                 border-color: #80808028;
@@ -861,9 +916,9 @@ export component MainWindow inherits Window {
                             clicked => { root.toggle-favorite(root.selected-id); }
                         }
                         Text {
-                            text: root.selected-remote;
+                            text: root.selected-remote != "" ? root.selected-remote : (root.selected-id != "" ? "💻 Nur lokal (kein Remote)" : "");
                             font-size: 12px;
-                            opacity: 0.65;
+                            opacity: 0.7;
                             vertical-alignment: center;
                             horizontal-stretch: 1;
                             overflow: elide;
@@ -872,13 +927,68 @@ export component MainWindow inherits Window {
                         Button { text: "Drift (" + root.drift-rows.length + ")"; primary: root.detail-tab == 1; clicked => { root.detail-tab = 1; } }
                         Button { text: "Health"; primary: root.detail-tab == 2; clicked => { root.detail-tab = 2; } }
                         Button { text: "Statistik"; primary: root.detail-tab == 3; clicked => { root.detail-tab = 3; root.load-stats(root.selected-id, false); } }
-                        Button { text: "Meta"; primary: root.detail-tab == 4; clicked => { root.detail-tab = 4; } }
+                        Button { text: "Meta / Remote"; primary: root.detail-tab == 4; clicked => { root.detail-tab = 4; } }
                     }
 
-                    // Tab 0: Standorte auf voller Breite
+                    // Tab 0: Standorte auf voller Breite + Online-Stellen-Leiste bei lokalen Repos
                     if root.detail-tab == 0: VerticalLayout {
                         spacing: 6px;
                         vertical-stretch: 1;
+
+                        // Falls das ausgewählte Repo noch keinen Remote hat: Direkt "Online stellen"-Leiste
+                        if root.selected-id != "" && root.selected-remote == "": Rectangle {
+                            background: #2a7fd418;
+                            border-width: 1px;
+                            border-color: #2a7fd466;
+                            border-radius: 6px;
+                            HorizontalLayout {
+                                padding-left: 8px;
+                                padding-right: 8px;
+                                padding-top: 4px;
+                                padding-bottom: 4px;
+                                spacing: 8px;
+                                Text {
+                                    text: "🌐 Online stellen:";
+                                    font-size: 12px;
+                                    font-weight: 700;
+                                    color: #2a7fd4;
+                                    vertical-alignment: center;
+                                }
+                                pub-url := LineEdit {
+                                    text: root.suggested-remote;
+                                    placeholder-text: "Remote-URL (wird aus Git-User in Einstellungen abgeleitet, z. B. https://github.com/user/" + root.selected-name + ".git)…";
+                                    horizontal-stretch: 1;
+                                }
+                                Button {
+                                    text: "Remote verbinden & Pushen";
+                                    primary: true;
+                                    enabled: pub-url.text != "";
+                                    clicked => {
+                                        root.publish-remote(root.selected-id, pub-url.text, true);
+                                    }
+                                }
+                                Button {
+                                    text: "Nur Remote setzen";
+                                    enabled: pub-url.text != "";
+                                    clicked => {
+                                        root.publish-remote(root.selected-id, pub-url.text, false);
+                                    }
+                                }
+                                Button {
+                                    text: "GitHub-Repo erstellen (Privat)";
+                                    clicked => { root.publish-github(root.selected-id, true); }
+                                }
+                                Button {
+                                    text: "GitHub (Öffentlich)";
+                                    clicked => { root.publish-github(root.selected-id, false); }
+                                }
+                                Button {
+                                    text: "GitHub ↗";
+                                    clicked => { root.open-url("https://github.com/new"); }
+                                }
+                            }
+                        }
+
                         ScrollView {
                             vertical-stretch: 1;
                             VerticalLayout {
@@ -903,9 +1013,9 @@ export component MainWindow inherits Window {
                                                 vertical-alignment: center;
                                             }
                                             Text { text: "Fetch: " + loc.fetched + " · Pull: " + loc.pulled; font-size: 11px; opacity: 0.65; vertical-alignment: center; }
-                                            Button { text: "Fetch"; enabled: !loc.other-os && loc.kind != 4; clicked => { root.location-action(loc.id, "fetch"); } }
-                                            Button { text: "Pull"; enabled: loc.can-pull; clicked => { root.location-action(loc.id, "pull"); } }
-                                            Button { text: "Push"; enabled: loc.can-push; clicked => { root.location-action(loc.id, "push"); } }
+                                            Button { text: "Fetch"; enabled: !loc.other-os && loc.kind != 4 && root.selected-remote != ""; clicked => { root.location-action(loc.id, "fetch"); } }
+                                            Button { text: "Pull"; enabled: loc.can-pull && root.selected-remote != ""; clicked => { root.location-action(loc.id, "pull"); } }
+                                            Button { text: "Push"; enabled: loc.can-push && root.selected-remote != ""; clicked => { root.location-action(loc.id, "push"); } }
                                             Button { text: "Stash"; enabled: loc.can-commit; clicked => { root.location-action(loc.id, "stash"); } }
                                             if loc.stashes > 0: Button { text: "Pop (" + loc.stashes + ")"; clicked => { root.location-action(loc.id, "stash_pop"); } }
                                             Button { text: "Explorer"; enabled: !loc.other-os; clicked => { root.open-in(loc.id, "explorer"); } }
@@ -941,7 +1051,7 @@ export component MainWindow inherits Window {
                                             Button {
                                                 text: "Commit & Push";
                                                 primary: true;
-                                                enabled: msg.text != "";
+                                                enabled: msg.text != "" && root.selected-remote != "";
                                                 clicked => { root.commit-and-push(loc.id, msg.text); msg.text = ""; }
                                             }
                                         }
@@ -962,7 +1072,7 @@ export component MainWindow inherits Window {
                                 enabled: newloc-edit.text != "" && root.selected-remote != "";
                                 clicked => { root.clone-location(root.selected-id, newloc-edit.text); newloc-edit.text = ""; }
                             }
-                            Button { text: "Alle Standorte fetchen"; clicked => { root.fetch-all(root.selected-id); } }
+                            Button { text: "Alle Standorte fetchen"; enabled: root.selected-remote != ""; clicked => { root.fetch-all(root.selected-id); } }
                         }
                     }
 
@@ -1041,24 +1151,46 @@ export component MainWindow inherits Window {
                         }
                     }
 
-                    // Tab 4: Meta
-                    if root.detail-tab == 4: HorizontalLayout {
-                        spacing: 12px;
+                    // Tab 4: Meta & Remote-Verwaltung
+                    if root.detail-tab == 4: VerticalLayout {
+                        spacing: 10px;
                         alignment: start;
-                        Text { text: "Tags:"; font-size: 12px; font-weight: 600; vertical-alignment: center; }
-                        tags-edit := LineEdit { text: root.selected-tags; placeholder-text: "z. B. rust, work"; width: 220px; }
-                        Text { text: "Notizen:"; font-size: 12px; font-weight: 600; vertical-alignment: center; }
-                        notes-edit := LineEdit { text: root.selected-notes; placeholder-text: "Notizen zum Repo…"; horizontal-stretch: 1; }
-                        Button {
-                            text: "Speichern";
-                            primary: true;
-                            enabled: root.selected-id != "";
-                            clicked => { root.save-repo-meta(root.selected-id, tags-edit.text, notes-edit.text); }
+                        HorizontalLayout {
+                            spacing: 10px;
+                            Text { text: "Remote-URL:"; font-size: 12px; font-weight: 600; width: 90px; vertical-alignment: center; }
+                            remote-edit := LineEdit {
+                                text: root.selected-remote != "" ? root.selected-remote : root.suggested-remote;
+                                placeholder-text: "z. B. https://github.com/user/repo.git";
+                                horizontal-stretch: 1;
+                            }
+                            Button {
+                                text: "Remote setzen & Pushen (-u origin)";
+                                enabled: root.selected-id != "" && remote-edit.text != "";
+                                clicked => { root.publish-remote(root.selected-id, remote-edit.text, true); }
+                            }
+                            Button {
+                                text: "Auf GitHub veröffentlichen (Privat)";
+                                enabled: root.selected-id != "";
+                                clicked => { root.publish-github(root.selected-id, true); }
+                            }
                         }
-                        Button {
-                            text: "Repo entfernen";
-                            enabled: root.selected-id != "";
-                            clicked => { root.delete-repo(root.selected-id); }
+                        HorizontalLayout {
+                            spacing: 10px;
+                            Text { text: "Tags:"; font-size: 12px; font-weight: 600; width: 90px; vertical-alignment: center; }
+                            tags-edit := LineEdit { text: root.selected-tags; placeholder-text: "z. B. rust, work"; width: 220px; }
+                            Text { text: "Notizen:"; font-size: 12px; font-weight: 600; vertical-alignment: center; }
+                            notes-edit := LineEdit { text: root.selected-notes; placeholder-text: "Notizen zum Repo…"; horizontal-stretch: 1; }
+                            Button {
+                                text: "Speichern";
+                                primary: true;
+                                enabled: root.selected-id != "";
+                                clicked => { root.save-repo-meta(root.selected-id, remote-edit.text, tags-edit.text, notes-edit.text); }
+                            }
+                            Button {
+                                text: "Repo entfernen";
+                                enabled: root.selected-id != "";
+                                clicked => { root.delete-repo(root.selected-id); }
+                            }
                         }
                     }
                 }

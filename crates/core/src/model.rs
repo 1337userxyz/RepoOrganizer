@@ -82,6 +82,8 @@ pub struct Snapshot {
     pub file_count: u32,
     #[serde(default)]
     pub size_kb: u64,
+    #[serde(default)]
+    pub remote_url: Option<String>,
     pub branch: Option<String>,
     pub ahead: u32,
     pub behind: u32,
@@ -116,6 +118,7 @@ impl Snapshot {
             commit_count: 0,
             file_count: 0,
             size_kb: 0,
+            remote_url: None,
             branch: None,
             ahead: 0,
             behind: 0,

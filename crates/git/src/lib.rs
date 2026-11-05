@@ -172,6 +172,57 @@ impl CliGit {
         combine(out, "config safe.directory")
     }
 
+    pub fn remote_origin(&self, repo: &Path) -> Option<String> {
+        let u = self.run(repo, &["config", "--get", "remote.origin.url"]).ok()?;
+        let t = u.trim();
+        if t.is_empty() { None } else { Some(t.to_string()) }
+    }
+
+    /// Liest global konfigurierten Git-/GitHub-Benutzernamen aus (`github.user` oder `user.name`).
+    pub fn global_git_user(&self) -> Option<String> {
+        for key in ["github.user", "user.username", "user.name"] {
+            if let Ok(out) = Command::new(&self.git_path).args(["config", "--global", "--get", key]).output() {
+                if out.status.success() {
+                    let val = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                    if !val.is_empty() && !val.contains(' ') {
+                        return Some(val);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    pub fn set_remote(&self, repo: &Path, url: &str) -> Result<String, GitError> {
+        let url = url.trim();
+        if url.is_empty() {
+            return Err(GitError::Failed { args: "remote".into(), stderr: "Remote-URL fehlt".into() });
+        }
+        if self.remote_origin(repo).is_some() {
+            self.run_all(repo, &["remote", "set-url", "origin", url])
+        } else {
+            self.run_all(repo, &["remote", "add", "origin", url])
+        }
+    }
+
+    pub fn set_remote_and_push(&self, repo: &Path, url: &str) -> Result<String, GitError> {
+        self.set_remote(repo, url)?;
+        self.run_all(repo, &["push", "-u", "origin", "HEAD"])
+    }
+
+    pub fn publish_github(&self, repo: &Path, name: &str, private: bool) -> Result<String, GitError> {
+        let vis = if private { "--private" } else { "--public" };
+        let out = Command::new("gh")
+            .current_dir(repo)
+            .args(["repo", "create", name.trim(), vis, "--source=.", "--remote=origin", "--push"])
+            .output()
+            .map_err(|e| GitError::Failed {
+                args: "gh repo create".into(),
+                stderr: format!("GitHub CLI (gh) nicht verfügbar ({e}). Bitte Remote-URL manuell eintragen oder gh installieren."),
+            })?;
+        combine(out, "gh repo create")
+    }
+
     pub fn clone_repo(&self, url: &str, dest: &Path) -> Result<String, GitError> {
         let out = Command::new(&self.git_path).arg("clone").arg(url).arg(dest).output()?;
         combine(out, "clone")
@@ -218,6 +269,7 @@ impl GitBackend for CliGit {
             commit_count: 0,
             file_count: 0,
             size_kb: 0,
+            remote_url: None,
             branch: None,
             ahead: 0,
             behind: 0,
@@ -249,6 +301,7 @@ impl GitBackend for CliGit {
                 snap.commit_count = self.commit_count(repo);
                 snap.file_count = self.file_count(repo);
                 snap.size_kb = self.git_size(repo) / 1024;
+                snap.remote_url = self.remote_origin(repo);
                 snap.state = if s.changed + s.untracked > 0 {
                     Status::Dirty
                 } else {

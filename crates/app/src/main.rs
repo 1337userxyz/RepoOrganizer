@@ -1,6 +1,6 @@
 mod present;
 
-use repoorganizer_core::config::{LocalConfig, SharedConfig};
+use repoorganizer_core::config::{detect_user_from_url, LocalConfig, SharedConfig};
 use repoorganizer_core::model::{Location, OsPaths, Repo, Role, Snapshot, Status};
 use repoorganizer_core::paths::{resolve, Os, Resolved};
 use repoorganizer_core::reach::{self, Reachability};
@@ -141,27 +141,124 @@ fn bars(b: &[Bar]) -> ModelRc<BarItem> {
     ModelRc::new(VecModel::from(b.iter().map(|x| BarItem { label: x.label.as_str().into(), value: x.value as i32, frac: x.value as f32 / max }).collect::<Vec<_>>()))
 }
 
+fn apply_theme_all(ui: &MainWindow, st: &State) {
+    let t: SharedString = st.local.theme.as_str().into();
+    ui.invoke_apply_theme(t.clone());
+    if let Some(sw) = st.scan_win.as_ref().and_then(|w| w.upgrade()) {
+        sw.invoke_apply_theme(t.clone());
+    }
+    if let Some(cfgw) = st.settings_win.as_ref().and_then(|w| w.upgrade()) {
+        cfgw.invoke_apply_theme(t);
+    }
+}
+
 fn apply(ui: &MainWindow, st: &mut State) {
     let now_t = now();
-    ui.invoke_apply_theme(st.local.theme.as_str().into());
+    apply_theme_all(ui, st);
 
-    // Gefilterte Repos sammeln und absteigend nach Datum des letzten Commits sortieren
+    // Alle vorkommenden Branches für die Branch-ComboBox sammeln
+    let mut all_branches: Vec<String> = st.snaps.values().filter_map(|s| s.branch.clone()).filter(|b| !b.is_empty()).collect();
+    all_branches.sort();
+    all_branches.dedup();
+    let mut b_opts: Vec<SharedString> = vec!["Branch: Alle".into()];
+    b_opts.extend(all_branches.iter().map(|b| SharedString::from(b.as_str())));
+    ui.set_branch_options(ModelRc::new(VecModel::from(b_opts)));
+
+    let col_repo = ui.get_col_repo_filter();
+    let col_status = ui.get_col_status_filter();
+    let col_branch = ui.get_col_branch_filter().to_string();
+    let col_sync = ui.get_col_sync_filter();
+    let col_commit = ui.get_col_commit_filter();
+    let col_remote = ui.get_col_remote_filter();
+
+    // Gefilterte Repos sammeln (inkl. Spalten-ComboBox-Filter) und nach Commit-Datum sortieren
     let mut filtered: Vec<(Repo, Option<i64>)> = st
         .shared
         .repos
         .iter()
         .filter(|r| matches(r, &st.filter) && view_ok(st, &st.view, &ctx_for(st, r, now_t)))
-        .map(|r| {
-            let last_c = st
-                .shared
-                .locations_of(&r.id)
-                .filter_map(|l| st.snaps.get(&l.id))
-                .filter_map(|s| s.last_commit)
-                .max();
-            (r.clone(), last_c)
+        .filter_map(|r| {
+            let snaps: Vec<&Snapshot> = st.shared.locations_of(&r.id).filter_map(|l| st.snaps.get(&l.id)).collect();
+            let last_c = snaps.iter().filter_map(|s| s.last_commit).max();
+            let status = repo_status(st, &r.id);
+            let branch = snaps.iter().find_map(|s| s.branch.clone()).unwrap_or_default();
+            let ahead = snaps.iter().map(|s| s.ahead).max().unwrap_or(0);
+            let behind = snaps.iter().map(|s| s.behind).max().unwrap_or(0);
+            let dirty = snaps.iter().map(|s| s.dirty_files + s.untracked).max().unwrap_or(0);
+            let stashes = snaps.iter().map(|s| s.stash_count).max().unwrap_or(0);
+            let has_drift = st.drift.get(&r.id).map(|m| !m.is_empty()).unwrap_or(false);
+            let eff_remote = if !r.remote_url.is_empty() {
+                r.remote_url.clone()
+            } else {
+                snaps.iter().find_map(|s| s.remote_url.clone()).unwrap_or_default()
+            };
+
+            if col_repo == 1 && !r.favorite {
+                return None;
+            }
+            let status_ok = match col_status {
+                1 => matches!(status, Status::UpToDate),
+                2 => matches!(status, Status::Dirty),
+                3 => matches!(status, Status::Ahead(_)),
+                4 => matches!(status, Status::Behind(_)),
+                5 => matches!(status, Status::Diverged),
+                6 => matches!(status, Status::Error(_) | Status::NotARepo),
+                7 => matches!(status, Status::Unavailable),
+                _ => true,
+            };
+            if !status_ok {
+                return None;
+            }
+            if !col_branch.is_empty() && col_branch != "Branch: Alle" && branch != col_branch {
+                return None;
+            }
+            let sync_ok = match col_sync {
+                1 => ahead == 0 && behind == 0 && dirty == 0,
+                2 => dirty > 0,
+                3 => ahead > 0,
+                4 => behind > 0,
+                5 => stashes > 0,
+                _ => true,
+            };
+            if !sync_ok {
+                return None;
+            }
+            let commit_ok = match col_commit {
+                2 => last_c.map(|ts| now_t - ts <= 86400).unwrap_or(false),
+                3 => last_c.map(|ts| now_t - ts <= 7 * 86400).unwrap_or(false),
+                4 => last_c.map(|ts| now_t - ts <= 30 * 86400).unwrap_or(false),
+                5 => last_c.map(|ts| now_t - ts > 30 * 86400).unwrap_or(true),
+                _ => true,
+            };
+            if !commit_ok {
+                return None;
+            }
+            let remote_ok = match col_remote {
+                1 => eff_remote.is_empty(),
+                2 => !eff_remote.is_empty(),
+                3 => matches!(status, Status::Error(_) | Status::NotARepo),
+                4 => has_drift,
+                _ => true,
+            };
+            if !remote_ok {
+                return None;
+            }
+
+            let mut repo_clone = r.clone();
+            if repo_clone.remote_url.is_empty() && !eff_remote.is_empty() {
+                repo_clone.remote_url = eff_remote;
+            }
+            Some((repo_clone, last_c))
         })
         .collect();
-    filtered.sort_by(|(a, ca), (b, cb)| cb.unwrap_or(0).cmp(&ca.unwrap_or(0)).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+
+    if col_commit == 1 {
+        // Älteste zuerst
+        filtered.sort_by(|(a, ca), (b, cb)| ca.unwrap_or(i64::MAX).cmp(&cb.unwrap_or(i64::MAX)).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+    } else {
+        // Standard: Neueste zuerst
+        filtered.sort_by(|(a, ca), (b, cb)| cb.unwrap_or(0).cmp(&ca.unwrap_or(0)).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+    }
 
     // Automatisch oberstes Repo auswählen (beim Programmstart oder wenn Auswahl durch Filter entfällt)
     if !filtered.is_empty() && (st.selected.is_empty() || !filtered.iter().any(|(r, _)| r.id == st.selected)) {
@@ -250,8 +347,6 @@ fn apply(ui: &MainWindow, st: &mut State) {
     }
     ui.set_views(ModelRc::new(VecModel::from(vrows)));
     ui.set_active_view(st.view.as_str().into());
-    ui.set_n_drift(st.shared.repos.iter().filter(|r| st.drift.get(&r.id).map(|m| !m.is_empty()).unwrap_or(false)).count() as i32);
-    ui.set_n_health(st.shared.repos.iter().filter(|r| ctx_for(st, r, now_t).health >= Level::Warn).count() as i32);
     let drows: Vec<InfoRow> = st
         .drift
         .get(&st.selected)
@@ -279,24 +374,6 @@ fn apply(ui: &MainWindow, st: &mut State) {
     ui.set_health_kind(hkind);
     ui.set_health_busy(st.health_busy);
 
-    let (mut online, mut offline, mut behind, mut ahead, mut dirty) = (0, 0, 0, 0, 0);
-    for s in st.snaps.values() {
-        match s.state {
-            Status::Unavailable | Status::NotARepo => offline += 1,
-            _ => online += 1,
-        }
-        behind += (s.behind > 0) as i32;
-        ahead += (s.ahead > 0) as i32;
-        dirty += (s.dirty_files + s.untracked > 0) as i32;
-    }
-    // Standorte ohne Snapshot (anderes OS, noch nicht geprüft) zählen als offline
-    offline += st.shared.locations.iter().filter(|l| !st.snaps.contains_key(&l.id)).count() as i32;
-    ui.set_n_repos(st.shared.repos.len() as i32);
-    ui.set_n_online(online);
-    ui.set_n_offline(offline);
-    ui.set_n_behind(behind);
-    ui.set_n_ahead(ahead);
-    ui.set_n_dirty(dirty);
     ui.set_error_text(st.error.as_str().into());
     ui.set_task_text(st.task.as_str().into());
 
@@ -330,8 +407,19 @@ fn apply(ui: &MainWindow, st: &mut State) {
     ui.set_selected_id(st.selected.as_str().into());
     let mut locs = Vec::new();
     if let Some(r) = st.shared.repos.iter().find(|r| r.id == st.selected) {
+        let eff_remote = if !r.remote_url.is_empty() {
+            r.remote_url.clone()
+        } else {
+            st.shared.locations_of(&r.id).filter_map(|l| st.snaps.get(&l.id)).find_map(|s| s.remote_url.clone()).unwrap_or_default()
+        };
+        let suggested = if eff_remote.is_empty() {
+            st.local.derive_remote_url(&r.name)
+        } else {
+            eff_remote.clone()
+        };
         ui.set_selected_name(r.name.as_str().into());
-        ui.set_selected_remote(r.remote_url.as_str().into());
+        ui.set_selected_remote(eff_remote.as_str().into());
+        ui.set_suggested_remote(suggested.as_str().into());
         ui.set_selected_tags(r.tags.join(", ").into());
         ui.set_selected_notes(r.notes.as_str().into());
         ui.set_selected_favorite(r.favorite);
@@ -373,6 +461,7 @@ fn apply(ui: &MainWindow, st: &mut State) {
     } else {
         ui.set_selected_name("Kein Repository".into());
         ui.set_selected_remote("".into());
+        ui.set_suggested_remote("".into());
         ui.set_selected_tags("".into());
         ui.set_selected_notes("".into());
         ui.set_selected_favorite(false);
@@ -393,11 +482,11 @@ fn apply(ui: &MainWindow, st: &mut State) {
 
 fn sync_settings_fields(cfgw: &SettingsWindow, st: &State) {
     cfgw.set_cfg_theme(st.local.theme.as_str().into());
+    cfgw.set_cfg_git_user(st.local.git_user.as_str().into());
     cfgw.set_cfg_git_path(st.local.git_path.clone().unwrap_or_default().into());
     cfgw.set_cfg_refresh_secs(st.local.refresh_interval_secs.to_string().into());
     cfgw.set_cfg_timeout_secs(st.local.reach_timeout_secs.to_string().into());
     cfgw.set_cfg_stale_days(st.local.stale_days.to_string().into());
-    cfgw.set_cfg_shared_path(st.shared_path.display().to_string().into());
 }
 
 /// Drift je Repo: lokale Vergleiche zwischen erreichbaren Standorten, Offline-Standorte per letztem Snapshot.
@@ -618,6 +707,21 @@ fn refresh(ui: &MainWindow, state: &Shared) {
             let mut st = state.lock().unwrap();
             st.snaps = merged;
             st.drift = drift;
+            // Falls ein Repo in repos.toml noch keine remote_url hat, aber Git origin kennt -> übernehmen
+            let mut updated_remote = false;
+            for idx in 0..st.shared.repos.len() {
+                if st.shared.repos[idx].remote_url.is_empty() {
+                    let rid = st.shared.repos[idx].id.clone();
+                    let found_url = st.shared.locations_of(&rid).filter_map(|l| st.snaps.get(&l.id)).find_map(|s| s.remote_url.clone());
+                    if let Some(u) = found_url {
+                        st.shared.repos[idx].remote_url = u;
+                        updated_remote = true;
+                    }
+                }
+            }
+            if updated_remote {
+                save_shared(&mut st);
+            }
             st.task = format!("{n} Standorte aktualisiert");
             apply(&ui, &mut st);
             ui.set_busy(false);
@@ -664,6 +768,10 @@ fn run_actions(ui: &MainWindow, state: &Shared, jobs: Vec<(String, PathBuf, Stri
                     "trust" => git.trust_directory(&path),
                     "commit" => git.stage_all(&path).and_then(|_| git.commit(&path, &msg)),
                     "commit_push" => git.stage_all(&path).and_then(|_| git.commit(&path, &msg)).and_then(|_| git.push(&path)),
+                    "set_remote" => git.set_remote(&path, &msg),
+                    "set_remote_push" => git.set_remote_and_push(&path, &msg),
+                    "publish_gh_priv" => git.publish_github(&path, &msg, true),
+                    "publish_gh_pub" => git.publish_github(&path, &msg, false),
                     other => Ok(format!("unbekannte Aktion {other}")),
                 }
                 .map_err(|e| e.to_string())
@@ -682,6 +790,16 @@ fn run_actions(ui: &MainWindow, state: &Shared, jobs: Vec<(String, PathBuf, Stri
                         Err(e) => {
                             t.state = 2;
                             t.detail = e.clone();
+                        }
+                    }
+                }
+                if let Some(remote_u) = snap.remote_url.clone() {
+                    if let Some(repo_id) = st.shared.locations.iter().find(|l| l.id == snap.location_id).map(|l| l.repo_id.clone()) {
+                        if let Some(r) = st.shared.repos.iter_mut().find(|r| r.id == repo_id) {
+                            if r.remote_url != remote_u {
+                                r.remote_url = remote_u;
+                                save_shared(&mut st);
+                            }
                         }
                     }
                 }
@@ -834,14 +952,42 @@ fn run_clone(ui: &MainWindow, state: &Shared, url: String, dest: String, repo_id
     });
 }
 
-fn add_repo(st: &mut State, name: &str, path: &str) {
-    let base = present::slug(name);
+fn name_from_path(path: &str) -> String {
+    let trimmed = path.trim().trim_end_matches(&['/', '\\'][..]);
+    let seg = trimmed.rsplit(&['/', '\\'][..]).next().unwrap_or(trimmed);
+    seg.strip_suffix(".git").unwrap_or(seg).trim().to_string()
+}
+
+fn add_repo(st: &mut State, name: &str, path: &str, remote_url: &str) -> String {
+    let eff_name = if !name.trim().is_empty() {
+        name.trim().to_string()
+    } else {
+        name_from_path(path)
+    };
+    let base = present::slug(&eff_name);
     let base = if base.is_empty() { "repo".to_string() } else { base };
     let mut id = base.clone();
     let mut n = 2;
     while st.shared.repos.iter().any(|r| r.id == id) {
         id = format!("{base}-{n}");
         n += 1;
+    }
+    let eff_remote = if !remote_url.trim().is_empty() {
+        remote_url.trim().to_string()
+    } else {
+        let p = path.trim();
+        let existing = if !p.is_empty() {
+            CliGit::new(st.local.git_path.as_deref()).remote_origin(std::path::Path::new(p))
+        } else {
+            None
+        };
+        existing.unwrap_or_else(|| st.local.derive_remote_url(&eff_name))
+    };
+    if st.local.git_user.trim().is_empty() {
+        if let Some(u) = detect_user_from_url(&eff_remote) {
+            st.local.git_user = u;
+            save_local(st);
+        }
     }
     let mut paths = OsPaths::default();
     let p = Some(path.trim().to_string());
@@ -850,9 +996,23 @@ fn add_repo(st: &mut State, name: &str, path: &str) {
         Os::Linux => paths.linux = p,
         Os::MacOs => paths.macos = p,
     }
-    st.shared.repos.push(Repo { id: id.clone(), name: name.trim().into(), remote_url: String::new(), tags: vec![], notes: String::new(), favorite: false });
-    st.shared.locations.push(Location { id: format!("{id}-1"), repo_id: id.clone(), label: "Hauptklon".into(), paths, role: Role::Primary, auto_fetch: false });
-    st.selected = id;
+    st.shared.repos.push(Repo {
+        id: id.clone(),
+        name: eff_name.clone(),
+        remote_url: eff_remote,
+        tags: vec![],
+        notes: String::new(),
+        favorite: false,
+    });
+    st.shared.locations.push(Location {
+        id: format!("{id}-1"),
+        repo_id: id.clone(),
+        label: eff_name,
+        paths,
+        role: Role::Primary,
+        auto_fetch: false,
+    });
+    st.selected = id.clone();
     match st.shared.save(&st.shared_path) {
         Ok(()) => {
             st.error.clear();
@@ -860,6 +1020,7 @@ fn add_repo(st: &mut State, name: &str, path: &str) {
         }
         Err(e) => st.error = e.to_string(),
     }
+    id
 }
 
 fn file_mtime(p: &std::path::Path) -> Option<SystemTime> {
@@ -915,11 +1076,22 @@ fn open_external(path: &std::path::Path, tool: &str) {
     };
 }
 
+fn open_url(url: &str) {
+    use std::process::Command;
+    let _ = if cfg!(windows) {
+        Command::new("cmd").args(["/C", "start", "", url]).spawn()
+    } else if cfg!(target_os = "macos") {
+        Command::new("open").arg(url).spawn()
+    } else {
+        Command::new("xdg-open").arg(url).spawn()
+    };
+}
+
 fn main() -> Result<(), slint::PlatformError> {
     if std::env::args().nth(1).as_deref() == Some("status") {
         let lp = LocalConfig::default_path().unwrap_or_else(|| PathBuf::from("local.toml"));
         let local = LocalConfig::load(&lp).unwrap_or_default();
-        let sp = local.shared_path(&lp);
+        let sp = SharedConfig::program_dir_path();
         let shared = SharedConfig::load(&sp).unwrap_or_default();
         let git = CliGit::new(local.git_path.as_deref());
         let os = Os::current();
@@ -939,19 +1111,40 @@ fn main() -> Result<(), slint::PlatformError> {
     }
     let local_path = LocalConfig::default_path().unwrap_or_else(|| PathBuf::from("local.toml"));
     let mut error = String::new();
-    let local = LocalConfig::load(&local_path).unwrap_or_else(|e| {
+    let mut local = LocalConfig::load(&local_path).unwrap_or_else(|e| {
         error = e.to_string();
         LocalConfig::default()
     });
-    let shared_path = local.shared_path(&local_path);
+    let shared_path = SharedConfig::program_dir_path();
     let shared = if shared_path.exists() {
         SharedConfig::load(&shared_path).unwrap_or_else(|e| {
             error = e.to_string();
             SharedConfig::default()
         })
     } else {
-        SharedConfig::default()
+        // Einmalige Migration aus dem alten AppData-Pfad, falls vorhanden
+        let legacy = local.shared_path(&local_path);
+        if legacy.exists() {
+            let cfg = SharedConfig::load(&legacy).unwrap_or_default();
+            let _ = cfg.save(&shared_path);
+            cfg
+        } else {
+            SharedConfig::default()
+        }
     };
+
+    // Git-User automatisch erkennen, falls noch nicht in local.toml gesetzt
+    if local.git_user.trim().is_empty() {
+        let detected = shared
+            .repos
+            .iter()
+            .find_map(|r| detect_user_from_url(&r.remote_url))
+            .or_else(|| CliGit::new(local.git_path.as_deref()).global_git_user());
+        if let Some(u) = detected {
+            local.git_user = u;
+            let _ = local.save(&local_path);
+        }
+    }
 
     let ui = MainWindow::new()?;
     ui.window().set_size(slint::LogicalSize::new(local.window_width as f32, local.window_height as f32));
@@ -1023,11 +1216,42 @@ fn main() -> Result<(), slint::PlatformError> {
     }
     {
         let (weak, state) = (ui.as_weak(), state.clone());
-        ui.on_add_repo(move |name: SharedString, path: SharedString| {
+        ui.on_column_filter_changed(move || {
+            if let Some(ui) = weak.upgrade() {
+                let mut st = state.lock().unwrap();
+                apply(&ui, &mut st);
+            }
+        });
+    }
+    {
+        ui.on_derive_name(move |path: SharedString| name_from_path(&path).into());
+    }
+    {
+        let state = state.clone();
+        ui.on_derive_url(move |name: SharedString, path: SharedString| {
+            let st = state.lock().unwrap();
+            let p = path.trim();
+            if !p.is_empty() {
+                let git = CliGit::new(st.local.git_path.as_deref());
+                if let Some(existing) = git.remote_origin(std::path::Path::new(p)) {
+                    return existing.into();
+                }
+            }
+            let eff_name = if !name.trim().is_empty() {
+                name.trim().to_string()
+            } else {
+                name_from_path(p)
+            };
+            st.local.derive_remote_url(&eff_name).into()
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_add_repo(move |name: SharedString, path: SharedString, url: SharedString| {
             if let Some(ui) = weak.upgrade() {
                 {
                     let mut st = state.lock().unwrap();
-                    add_repo(&mut st, &name, &path);
+                    add_repo(&mut st, &name, &path, &url);
                     apply(&ui, &mut st);
                 }
                 refresh(&ui, &state);
@@ -1064,6 +1288,53 @@ fn main() -> Result<(), slint::PlatformError> {
     }
     {
         let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_publish_remote(move |repo: SharedString, url: SharedString, do_push: bool| {
+            if let Some(ui) = weak.upgrade() {
+                let u = url.trim().to_string();
+                if u.is_empty() {
+                    return;
+                }
+                let jobs = {
+                    let mut st = state.lock().unwrap();
+                    if st.local.git_user.trim().is_empty() {
+                        if let Some(usr) = detect_user_from_url(&u) {
+                            st.local.git_user = usr;
+                            save_local(&mut st);
+                        }
+                    }
+                    if let Some(r) = st.shared.repos.iter_mut().find(|r| r.id == repo.as_str()) {
+                        r.remote_url = u.clone();
+                    }
+                    save_shared(&mut st);
+                    apply(&ui, &mut st);
+                    jobs_for(&st, None, Some(&repo))
+                };
+                run_actions(&ui, &state, jobs, if do_push { "set_remote_push" } else { "set_remote" }, u);
+            }
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_publish_github(move |repo: SharedString, private: bool| {
+            if let Some(ui) = weak.upgrade() {
+                let (name, jobs) = {
+                    let st = state.lock().unwrap();
+                    let name = st.shared.repos.iter().find(|r| r.id == repo.as_str()).map(|r| r.name.clone()).unwrap_or_else(|| repo.to_string());
+                    let mut jobs = jobs_for(&st, None, Some(&repo));
+                    jobs.truncate(1);
+                    (name, jobs)
+                };
+                run_actions(&ui, &state, jobs, if private { "publish_gh_priv" } else { "publish_gh_pub" }, name);
+            }
+        });
+    }
+    {
+        ui.on_open_url(move |url: SharedString| {
+            open_url(&url);
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
         ui.on_fetch_all(move |repo: SharedString| {
             if let Some(ui) = weak.upgrade() {
                 let jobs = jobs_for(&state.lock().unwrap(), None, Some(&repo));
@@ -1072,11 +1343,13 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
-    // Separate Fenster öffnen: Scan-Assistent & Einstellungen
+    // Separate Fenster öffnen: Scan-Assistent & Einstellungen (inkl. Theme-Synchronisation)
     {
-        let sw = scan_win.as_weak();
+        let (sw, state) = (scan_win.as_weak(), state.clone());
         ui.on_open_scan(move || {
             if let Some(w) = sw.upgrade() {
+                let theme = state.lock().unwrap().local.theme.clone();
+                w.invoke_apply_theme(theme.as_str().into());
                 let _ = w.show();
             }
         });
@@ -1087,6 +1360,7 @@ fn main() -> Result<(), slint::PlatformError> {
             if let Some(w) = cfgw.upgrade() {
                 let st = state.lock().unwrap();
                 sync_settings_fields(&w, &st);
+                w.invoke_apply_theme(st.local.theme.as_str().into());
                 let _ = w.show();
             }
         });
@@ -1280,16 +1554,24 @@ fn main() -> Result<(), slint::PlatformError> {
     }
     {
         let (weak, state) = (ui.as_weak(), state.clone());
-        ui.on_save_repo_meta(move |repo: SharedString, tags: SharedString, notes: SharedString| {
+        ui.on_save_repo_meta(move |repo: SharedString, remote: SharedString, tags: SharedString, notes: SharedString| {
             if let Some(ui) = weak.upgrade() {
-                let mut st = state.lock().unwrap();
-                if let Some(r) = st.shared.repos.iter_mut().find(|r| r.id == repo.as_str()) {
-                    r.tags = tags.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
-                    r.notes = notes.trim().to_string();
+                let rem = remote.trim().to_string();
+                let jobs = {
+                    let mut st = state.lock().unwrap();
+                    if let Some(r) = st.shared.repos.iter_mut().find(|r| r.id == repo.as_str()) {
+                        r.remote_url = rem.clone();
+                        r.tags = tags.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+                        r.notes = notes.trim().to_string();
+                    }
+                    save_shared(&mut st);
+                    st.task = "Repo-Metadaten gespeichert".into();
+                    apply(&ui, &mut st);
+                    if !rem.is_empty() { jobs_for(&st, None, Some(&repo)) } else { Vec::new() }
+                };
+                if !jobs.is_empty() {
+                    run_actions(&ui, &state, jobs, "set_remote", rem);
                 }
-                save_shared(&mut st);
-                st.task = "Repo-Metadaten gespeichert".into();
-                apply(&ui, &mut st);
             }
         });
     }
@@ -1325,54 +1607,34 @@ fn main() -> Result<(), slint::PlatformError> {
                 let mut st = state.lock().unwrap();
                 st.local.theme = theme.trim().to_string();
                 save_local(&mut st);
-                ui.invoke_apply_theme(st.local.theme.as_str().into());
+                apply_theme_all(&ui, &st);
             }
         });
     }
     {
         let (weak, cfgw, state) = (ui.as_weak(), settings_win.as_weak(), state.clone());
-        settings_win.on_save_settings(move |theme: SharedString, git: SharedString, refr: SharedString, timeout: SharedString, stale: SharedString, shared_p: SharedString| {
+        settings_win.on_save_settings(move |theme: SharedString, git_user: SharedString, git: SharedString, refr: SharedString, timeout: SharedString, stale: SharedString| {
             if let Some(ui) = weak.upgrade() {
-                let reload = {
-                    let mut st = state.lock().unwrap();
-                    st.local.theme = theme.trim().to_string();
-                    let g = git.trim();
-                    st.local.git_path = if g.is_empty() { None } else { Some(g.to_string()) };
-                    if let Ok(v) = refr.trim().parse() {
-                        st.local.refresh_interval_secs = v;
-                    }
-                    if let Ok(v) = timeout.trim().parse() {
-                        st.local.reach_timeout_secs = v;
-                    }
-                    if let Ok(v) = stale.trim().parse() {
-                        st.local.stale_days = v;
-                    }
-                    let new_sp = PathBuf::from(shared_p.trim());
-                    let mut reload = false;
-                    if !shared_p.trim().is_empty() && new_sp != st.shared_path {
-                        st.local.shared_config = Some(new_sp.clone());
-                        st.shared_path = new_sp;
-                        if st.shared_path.exists() {
-                            if let Ok(cfg) = SharedConfig::load(&st.shared_path) {
-                                st.shared = cfg;
-                            }
-                        } else {
-                            save_shared(&mut st);
-                        }
-                        st.shared_mtime = file_mtime(&st.shared_path);
-                        reload = true;
-                    }
-                    save_local(&mut st);
-                    st.task = "Einstellungen gespeichert".into();
-                    if let Some(w) = cfgw.upgrade() {
-                        sync_settings_fields(&w, &st);
-                    }
-                    apply(&ui, &mut st);
-                    reload
-                };
-                if reload {
-                    refresh(&ui, &state);
+                let mut st = state.lock().unwrap();
+                st.local.theme = theme.trim().to_string();
+                st.local.git_user = git_user.trim().to_string();
+                let g = git.trim();
+                st.local.git_path = if g.is_empty() { None } else { Some(g.to_string()) };
+                if let Ok(v) = refr.trim().parse() {
+                    st.local.refresh_interval_secs = v;
                 }
+                if let Ok(v) = timeout.trim().parse() {
+                    st.local.reach_timeout_secs = v;
+                }
+                if let Ok(v) = stale.trim().parse() {
+                    st.local.stale_days = v;
+                }
+                save_local(&mut st);
+                st.task = "Einstellungen gespeichert".into();
+                if let Some(w) = cfgw.upgrade() {
+                    sync_settings_fields(&w, &st);
+                }
+                apply(&ui, &mut st);
             }
         });
     }

@@ -65,6 +65,26 @@ impl SharedConfig {
         self.locations.iter().filter(move |l| l.repo_id == repo_id)
     }
 
+    /// Stabiler Pfad im Programmverzeichnis (`repos.toml`).
+    pub fn program_dir_path() -> PathBuf {
+        if let Ok(cwd) = std::env::current_dir() {
+            if cwd.join("Cargo.toml").exists() || cwd.join("repos.toml").exists() || cwd.join("starter.bat").exists() {
+                return cwd.join("repos.toml");
+            }
+        }
+        if let Ok(exe) = std::env::current_exe() {
+            for anc in exe.ancestors().skip(1) {
+                if anc.join("Cargo.toml").exists() || anc.join("starter.bat").exists() {
+                    return anc.join("repos.toml");
+                }
+            }
+            if let Some(dir) = exe.parent() {
+                return dir.join("repos.toml");
+            }
+        }
+        PathBuf::from("repos.toml")
+    }
+
     pub fn load(path: &Path) -> Result<Self, ConfigError> {
         let text = read(path)?;
         let cfg: SharedConfig = toml::from_str(&text).map_err(|source| ConfigError::Parse { path: path.into(), source })?;
@@ -87,6 +107,7 @@ impl SharedConfig {
 pub struct LocalConfig {
     pub theme: String,
     pub git_path: Option<String>,
+    pub git_user: String,
     pub refresh_interval_secs: u64,
     pub reach_timeout_secs: u64,
     pub window_width: u32,
@@ -102,6 +123,7 @@ impl Default for LocalConfig {
         Self {
             theme: "system".into(),
             git_path: None,
+            git_user: String::new(),
             refresh_interval_secs: 300,
             reach_timeout_secs: 3,
             window_width: 1280,
@@ -136,6 +158,44 @@ impl LocalConfig {
     pub fn shared_path(&self, local_path: &Path) -> PathBuf {
         self.shared_config.clone().unwrap_or_else(|| local_path.with_file_name("repos.toml"))
     }
+
+    /// Leitet aus `git_user` (z. B. `mein-user` oder `https://github.com/mein-user`) und Repo-Namen die Remote-URL ab.
+    pub fn derive_remote_url(&self, repo_name: &str) -> String {
+        derive_remote_url(&self.git_user, repo_name)
+    }
+}
+
+/// Leitet aus einem Git-Benutzernamen (oder einer Basis-URL) und dem Repository-Namen automatisch die Remote-URL ab.
+pub fn derive_remote_url(git_user: &str, repo_name: &str) -> String {
+    let u = git_user.trim().trim_end_matches('/');
+    let n = repo_name.trim().trim_end_matches(".git");
+    if u.is_empty() || n.is_empty() {
+        return String::new();
+    }
+    if u.starts_with("http://") || u.starts_with("https://") || u.starts_with("ssh://") || u.starts_with("git@") {
+        format!("{u}/{n}.git")
+    } else if u.contains('/') {
+        format!("https://{u}/{n}.git")
+    } else {
+        format!("https://github.com/{u}/{n}.git")
+    }
+}
+
+/// Versucht den Git-User aus bereits vorhandenen Remote-URLs zu erkennen (z. B. `https://github.com/<user>/<repo>.git`).
+pub fn detect_user_from_url(url: &str) -> Option<String> {
+    let u = url.trim().trim_end_matches('/').trim_end_matches(".git");
+    if let Some(rest) = u.strip_prefix("https://").or_else(|| u.strip_prefix("http://")) {
+        let parts: Vec<&str> = rest.split('/').filter(|s| !s.is_empty()).collect();
+        if parts.len() >= 3 {
+            return Some(parts[1].to_string());
+        }
+    } else if let Some((_, path)) = u.split_once(':') {
+        let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+        if parts.len() >= 2 {
+            return Some(parts[0].to_string());
+        }
+    }
+    None
 }
 
 fn read(path: &Path) -> Result<String, ConfigError> {
