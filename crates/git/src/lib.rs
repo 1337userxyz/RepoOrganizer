@@ -128,7 +128,7 @@ impl CliGit {
     }
 
     pub fn push(&self, repo: &Path) -> Result<String, GitError> {
-        self.run_all(repo, &["push"])
+        self.run_all(repo, &["push", "-u", "origin", "HEAD"])
     }
 
     pub fn stage(&self, repo: &Path, paths: &[&str]) -> Result<String, GitError> {
@@ -207,20 +207,108 @@ impl CliGit {
 
     pub fn set_remote_and_push(&self, repo: &Path, url: &str) -> Result<String, GitError> {
         self.set_remote(repo, url)?;
-        self.run_all(repo, &["push", "-u", "origin", "HEAD"])
+        match self.run_all(repo, &["push", "-u", "origin", "HEAD"]) {
+            Ok(out) => Ok(out),
+            Err(GitError::Failed { stderr, .. }) if stderr.contains("Repository not found") || stderr.contains("not found") => {
+                if url.contains("github.com") {
+                    let trimmed = url.trim().trim_end_matches(".git").trim_end_matches('/');
+                    let name = trimmed.rsplit('/').next().unwrap_or("");
+                    if !name.is_empty() {
+                        let _ = self.create_github_repo_api(name, false)?;
+                        return self.run_all(repo, &["push", "-u", "origin", "HEAD"]);
+                    }
+                }
+                Err(GitError::Failed { args: "push".into(), stderr })
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Fragt Git Credential Manager nach Zugangsdaten für github.com (Liefert Personal Access Token / OAuth Token).
+    pub fn github_token(&self) -> Option<String> {
+        use std::io::Write;
+        let mut child = Command::new(&self.git_path)
+            .args(["credential", "fill"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .ok()?;
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(b"protocol=https\nhost=github.com\n\n");
+        }
+        let out = child.wait_with_output().ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        let text = String::from_utf8_lossy(&out.stdout);
+        for line in text.lines() {
+            if let Some(pw) = line.strip_prefix("password=") {
+                let token = pw.trim();
+                if !token.is_empty() {
+                    return Some(token.to_string());
+                }
+            }
+        }
+        None
+    }
+
+    /// Erstellt ein GitHub-Repository direkt über die GitHub REST API (benötigt kein `gh` CLI).
+    pub fn create_github_repo_api(&self, name: &str, private: bool) -> Result<String, GitError> {
+        let token = self.github_token().ok_or_else(|| GitError::Failed {
+            args: "github api".into(),
+            stderr: "Kein GitHub-Token im Git Credential Manager gefunden. Bitte Git-Anmeldedaten für github.com hinterlegen oder GitHub CLI (gh) installieren.".into(),
+        })?;
+        let payload = format!(r#"{{"name":"{}","private":{}}}"#, name.trim(), private);
+        let out = Command::new("curl")
+            .args([
+                "-s",
+                "-X", "POST",
+                "https://api.github.com/user/repos",
+                "-H", &format!("Authorization: Bearer {token}"),
+                "-H", "User-Agent: RepoOrganizer",
+                "-H", "Accept: application/vnd.github.v3+json",
+                "-H", "Content-Type: application/json",
+                "-d", &payload,
+            ])
+            .output()?;
+        let resp = String::from_utf8_lossy(&out.stdout).to_string();
+        if resp.contains("\"id\":") || resp.contains("already exists") {
+            Ok(resp)
+        } else {
+            let err_msg = if let Some(msg_start) = resp.find("\"message\":\"") {
+                let rest = &resp[msg_start + 11..];
+                rest.split('"').next().unwrap_or(&resp)
+            } else {
+                &resp
+            };
+            Err(GitError::Failed {
+                args: "github api create repo".into(),
+                stderr: format!("GitHub API Fehler: {err_msg}"),
+            })
+        }
     }
 
     pub fn publish_github(&self, repo: &Path, name: &str, private: bool) -> Result<String, GitError> {
         let vis = if private { "--private" } else { "--public" };
-        let out = Command::new("gh")
+        // 1. Zuerst gh probieren, falls installiert
+        let gh_res = Command::new("gh")
             .current_dir(repo)
             .args(["repo", "create", name.trim(), vis, "--source=.", "--remote=origin", "--push"])
-            .output()
-            .map_err(|e| GitError::Failed {
-                args: "gh repo create".into(),
-                stderr: format!("GitHub CLI (gh) nicht verfügbar ({e}). Bitte Remote-URL manuell eintragen oder gh installieren."),
-            })?;
-        combine(out, "gh repo create")
+            .output();
+
+        if let Ok(out) = gh_res {
+            if out.status.success() {
+                return combine(out, "gh repo create");
+            }
+        }
+
+        // 2. Fallback: Über GitHub REST API erstellen (mittels Git Credential Manager Token)
+        let _ = self.create_github_repo_api(name, private)?;
+        let user = self.global_git_user().unwrap_or_else(|| "1337userxyz".into());
+        let url = format!("https://github.com/{user}/{}.git", name.trim());
+        self.set_remote(repo, &url)?;
+        self.run_all(repo, &["push", "-u", "origin", "HEAD"])
     }
 
     pub fn clone_repo(&self, url: &str, dest: &Path) -> Result<String, GitError> {
@@ -302,10 +390,13 @@ impl GitBackend for CliGit {
                 snap.file_count = self.file_count(repo);
                 snap.size_kb = self.git_size(repo) / 1024;
                 snap.remote_url = self.remote_origin(repo);
+                if s.upstream.is_none() && snap.remote_url.is_some() && snap.commit_count > 0 {
+                    snap.ahead = snap.commit_count;
+                }
                 snap.state = if s.changed + s.untracked > 0 {
                     Status::Dirty
                 } else {
-                    match (s.ahead, s.behind) {
+                    match (snap.ahead, snap.behind) {
                         (0, 0) => Status::UpToDate,
                         (a, 0) => Status::Ahead(a),
                         (0, b) => Status::Behind(b),
