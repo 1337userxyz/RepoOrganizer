@@ -46,6 +46,7 @@ remote_url = "https://github.com/1337userxyz/RepoOrganizer.git"
 [[repo]]
 id = "star-trek-skills"
 name = "star-trek-skills"
+remote_url = "/home/tristan/Projekte/star-trek-skills"
 
 [[repo]]
 id = "startrekcomputer"
@@ -63,6 +64,16 @@ windows = 'R:\git\configurable-csv-analyzer-rust'
 linux = "/r/git/configurable-csv-analyzer-rust"
 
 [[location]]
+id = "configurable-csv-analyzer-rust-1-2"
+repo_id = "configurable-csv-analyzer-rust"
+label = "configurable-csv-analyzer-rust"
+role = "backup"
+
+[location.paths]
+linux = "/home/tristan/Projekte/configurable-csv-analyzer-rust"
+macos = "/home/tristan/Projekte/configurable-csv-analyzer-rust"
+
+[[location]]
 id = "configurablecsvanalyzer-1"
 repo_id = "configurablecsvanalyzer"
 label = "ConfigurableCsvAnalyzer"
@@ -70,6 +81,16 @@ role = "primary"
 
 [location.paths]
 windows = 'R:\git\ConfigurableCsvAnalyzer'
+
+[[location]]
+id = "configurablecsvanalyzer-1-2"
+repo_id = "configurablecsvanalyzer"
+label = "ConfigurableCsvAnalyzer"
+role = "backup"
+
+[location.paths]
+linux = "/home/tristan/Projekte/ConfigurableCsvAnalyzer"
+macos = "/home/tristan/Projekte/ConfigurableCsvAnalyzer"
 
 [[location]]
 id = "gpomanagermvvmgui-1"
@@ -81,6 +102,16 @@ role = "primary"
 windows = 'R:\git\GpoManagerMVVMGui'
 
 [[location]]
+id = "gpomanagermvvmgui-1-2"
+repo_id = "gpomanagermvvmgui"
+label = "GpoManagerMVVMGui"
+role = "backup"
+
+[location.paths]
+linux = "/home/tristan/Projekte/GpoManagerMVVMGui"
+macos = "/home/tristan/Projekte/GpoManagerMVVMGui"
+
+[[location]]
 id = "networkdrivemanager-1"
 repo_id = "networkdrivemanager"
 label = "NetworkDriveManager"
@@ -88,6 +119,16 @@ role = "primary"
 
 [location.paths]
 windows = 'R:\git\NetworkDriveManager'
+
+[[location]]
+id = "networkdrivemanager-1-2"
+repo_id = "networkdrivemanager"
+label = "NetworkDriveManager"
+role = "backup"
+
+[location.paths]
+linux = "/home/tristan/Projekte/NetworkDriveManager"
+macos = "/home/tristan/Projekte/NetworkDriveManager"
 
 [[location]]
 id = "nixos-config-1"
@@ -99,6 +140,17 @@ role = "primary"
 linux = "/home/tristan/Projekte/nixos-config"
 
 [[location]]
+id = "nixos-config-1-2"
+repo_id = "nixos-config"
+label = "nixos-config"
+role = "backup"
+
+[location.paths]
+windows = 'R:\git\nixos-config'
+linux = "/r/git/nixos-config"
+macos = "/r/git/nixos-config"
+
+[[location]]
 id = "pwsh7-scripts-1"
 repo_id = "pwsh7-scripts"
 label = "pwsh7-scripts"
@@ -106,6 +158,16 @@ role = "primary"
 
 [location.paths]
 windows = 'R:\git\pwsh7-scripts'
+
+[[location]]
+id = "pwsh7-scripts-1-2"
+repo_id = "pwsh7-scripts"
+label = "pwsh7-scripts"
+role = "backup"
+
+[location.paths]
+linux = "/home/tristan/Projekte/pwsh7-scripts"
+macos = "/home/tristan/Projekte/pwsh7-scripts"
 
 [[location]]
 id = "repoorganizer-1"
@@ -134,6 +196,17 @@ role = "primary"
 
 [location.paths]
 linux = "/home/tristan/Projekte/star-trek-skills"
+
+[[location]]
+id = "star-trek-skills-1-2"
+repo_id = "star-trek-skills"
+label = "star-trek-skills"
+role = "backup"
+
+[location.paths]
+windows = 'R:\git\star-trek-skills'
+linux = "/r/git/star-trek-skills"
+macos = "/r/git/star-trek-skills"
 
 [[location]]
 id = "startrekcomputer-1"
