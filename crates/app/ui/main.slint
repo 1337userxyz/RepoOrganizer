@@ -535,6 +535,21 @@ export component MainWindow inherits Window {
     in property <string> quick-commit-target-id: "";
     in property <string> quick-commit-target-desc: "";
 
+    // Smart-Sync Dialog
+    in-out property <bool> sync-dialog-open: false;
+    in property <int> sync-total-actions: 0;
+    in property <int> sync-behind-count: 0;
+    in property <int> sync-dirty-count: 0;
+    in property <int> sync-ahead-count: 0;
+    in property <int> sync-missing-bp-count: 0;
+    in-out property <bool> sync-opt-pull: true;
+    in-out property <bool> sync-opt-commit-push: true;
+    in-out property <string> sync-commit-msg: "Smart-Sync Update";
+    in-out property <bool> sync-opt-clone-missing: true;
+    in-out property <bool> sync-opt-auto-sync: true;
+    property <int> sync-selected-actions: (root.sync-opt-pull ? root.sync-behind-count : 0) + (root.sync-opt-commit-push ? (root.sync-dirty-count + root.sync-ahead-count) : 0) + (root.sync-opt-clone-missing ? root.sync-missing-bp-count : 0);
+
+    callback run-smart-sync(bool, bool, string, bool, bool);
     callback do-quick-commit-push(string);
     callback do-quick-commit(string);
 
@@ -671,65 +686,108 @@ export component MainWindow inherits Window {
                     Button { text: root.busy ? "Aktualisiere…" : "Aktualisieren"; enabled: !root.busy; clicked => { root.refresh(); } }
                     Button { text: "Alle fetchen"; enabled: !root.busy; clicked => { root.fetch-all(""); } }
                     Button {
-                        text: root.dirty-repos-count > 0 ? ("Commit & Push (" + root.dirty-repos-count + ") 🚀") : "Commit & Push 🚀";
-                        primary: root.dirty-repos-count > 0;
+                        text: root.sync-total-actions > 0 ? ("⚡ Smart-Sync (" + root.sync-total-actions + ") 🔄") : "⚡ Smart-Sync 🔄";
+                        primary: true;
                         enabled: !root.busy;
-                        clicked => { root.quick-commit-open = !root.quick-commit-open; }
+                        clicked => { root.sync-dialog-open = !root.sync-dialog-open; }
                     }
                     Button { text: "Repo hinzufügen"; clicked => { root.adding = !root.adding; } }
                 }
 
-                if root.quick-commit-open: Rectangle {
-                    background: #2e9e5b18;
-                    border-width: 1px;
-                    border-color: #2e9e5b66;
-                    border-radius: 6px;
-                    HorizontalLayout {
-                        padding-left: 10px;
-                        padding-right: 10px;
-                        padding-top: 6px;
-                        padding-bottom: 6px;
-                        spacing: 10px;
-                        Text {
-                            text: "🚀 Schnell-Commit & Push: " + root.quick-commit-target-desc;
-                            font-weight: 700;
-                            font-size: 12px;
-                            color: #2e9e5b;
-                            vertical-alignment: center;
+                if root.sync-dialog-open: Rectangle {
+                    background: (Palette.color-scheme == ColorScheme.dark) ? #1e293b : #2a7fd414;
+                    border-width: 1.5px;
+                    border-color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf888 : #2a7fd455;
+                    border-radius: 8px;
+                    clip: true;
+
+                    VerticalLayout {
+                        padding: 14px;
+                        spacing: 12px;
+
+                        // Titel & Schließen
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text {
+                                text: "⚡ Smart-Sync: Alles intelligent synchronisieren";
+                                font-size: 15px;
+                                font-weight: 700;
+                                color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+                            Button {
+                                text: "×";
+                                clicked => { root.sync-dialog-open = false; }
+                            }
                         }
-                        qmsg := LineEdit {
-                            placeholder-text: "Commit-Nachricht eingeben… (Enter für Commit & Push)";
-                            horizontal-stretch: 1;
-                            accepted => {
-                                if qmsg.text != "" {
-                                    root.do-quick-commit-push(qmsg.text);
-                                    qmsg.text = "";
-                                    root.quick-commit-open = false;
+
+                        Text {
+                            text: "Wähle aus, welche Aktionen intelligent ausgeführt werden sollen. Datensicherheit garantiert: Uncommittete oder divergierende Stände werden niemals überschrieben.";
+                            font-size: 12px;
+                            opacity: 0.85;
+                            wrap: word-wrap;
+                        }
+
+                        // Checkboxen
+                        VerticalLayout {
+                            spacing: 8px;
+
+                            // 1. Pullen
+                            CheckBox {
+                                text: "📥 Remote-Updates pullen (" + root.sync-behind-count + " Standort" + (root.sync-behind-count == 1 ? "" : "e") + " mit neuen Commits von GitHub)";
+                                checked <=> root.sync-opt-pull;
+                                enabled: root.sync-behind-count > 0;
+                            }
+
+                            // 2. Commit & Push
+                            CheckBox {
+                                text: "🚀 Lokale Änderungen committen & pushen (" + (root.sync-dirty-count + root.sync-ahead-count) + " Standort" + ((root.sync-dirty-count + root.sync-ahead-count) == 1 ? "" : "e") + " mit ungesendeten Änderungen)";
+                                checked <=> root.sync-opt-commit-push;
+                                enabled: (root.sync-dirty-count + root.sync-ahead-count) > 0;
+                            }
+                            if root.sync-opt-commit-push && (root.sync-dirty-count + root.sync-ahead-count) > 0: HorizontalLayout {
+                                padding-left: 28px;
+                                spacing: 8px;
+                                Text { text: "Commit-Nachricht:"; vertical-alignment: center; font-size: 12px; opacity: 0.85; }
+                                LineEdit {
+                                    text <=> root.sync-commit-msg;
+                                    placeholder-text: "Nachricht für die Commits (z. B. Smart-Sync Update)…";
+                                    horizontal-stretch: 1;
                                 }
                             }
-                        }
-                        Button {
-                            text: "Pushen 🚀";
-                            primary: true;
-                            enabled: qmsg.text != "";
-                            clicked => {
-                                root.do-quick-commit-push(qmsg.text);
-                                qmsg.text = "";
-                                root.quick-commit-open = false;
+
+                            // 3. Basispfade klonen
+                            CheckBox {
+                                text: "📁 In fehlende Basispfade klonen (" + root.sync-missing-bp-count + " fehlende" + (root.sync-missing-bp-count == 1 ? "r" : "") + " Standort" + (root.sync-missing-bp-count == 1 ? "" : "e") + " in RAM-Disk / SSD)";
+                                checked <=> root.sync-opt-clone-missing;
+                                enabled: root.sync-missing-bp-count > 0;
+                            }
+
+                            // 4. Auto-Sync Alternativpfade
+                            CheckBox {
+                                text: "🔄 Lokale Alternativpfade (z. B. SSD ↔ RAM-Disk) nach Push automatisch angleichen";
+                                checked <=> root.sync-opt-auto-sync;
                             }
                         }
-                        Button {
-                            text: "Nur Commit";
-                            enabled: qmsg.text != "";
-                            clicked => {
-                                root.do-quick-commit(qmsg.text);
-                                qmsg.text = "";
-                                root.quick-commit-open = false;
+
+                        // Fußzeile mit Aktionen
+                        HorizontalLayout {
+                            spacing: 10px;
+                            alignment: end;
+                            Button {
+                                text: "🚀 Jetzt synchronisieren" + (root.sync-selected-actions > 0 ? (" (" + root.sync-selected-actions + " Aktionen)") : "");
+                                primary: true;
+                                enabled: root.sync-selected-actions > 0;
+                                clicked => {
+                                    root.run-smart-sync(root.sync-opt-pull, root.sync-opt-commit-push, root.sync-commit-msg, root.sync-opt-clone-missing, root.sync-opt-auto-sync);
+                                    root.sync-dialog-open = false;
+                                }
                             }
-                        }
-                        Button {
-                            text: "×";
-                            clicked => { root.quick-commit-open = false; }
+                            Button {
+                                text: "Abbrechen";
+                                clicked => { root.sync-dialog-open = false; }
+                            }
                         }
                     }
                 }
