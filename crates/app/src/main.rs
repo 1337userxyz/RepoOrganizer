@@ -1379,9 +1379,9 @@ fn run_smart_sync(
                     for l in st.shared.locations_of(&r.id) {
                         if let Resolved::Local(p) = resolved(&st, l) {
                             if p.is_dir() {
-                                let snap = git.snapshot(&l.id, &p);
-                                let dirty = snap.dirty_files + snap.untracked > 0;
-                                let ahead = snap.ahead > 0;
+                                let snap = st.snaps.get(&l.id);
+                                let dirty = snap.map(|s| s.dirty_files + s.untracked > 0).unwrap_or(false);
+                                let ahead = snap.map(|s| s.ahead > 0).unwrap_or(false);
                                 if dirty || ahead {
                                     let label = if l.label.is_empty() { r.name.clone() } else { format!("{} ({})", r.name, l.label) };
                                     list.push((l.id.clone(), p, label, dirty, ahead));
@@ -1549,11 +1549,12 @@ fn run_smart_sync(
                     for l in st.shared.locations_of(&r.id) {
                         if let Resolved::Local(p) = resolved(&st, l) {
                             if p.is_dir() {
-                                let snap = git.snapshot(&l.id, &p);
-                                let dirty = snap.dirty_files + snap.untracked;
-                                if snap.behind > 0 && dirty == 0 && snap.ahead == 0 {
-                                    let label = if l.label.is_empty() { r.name.clone() } else { format!("{} ({})", r.name, l.label) };
-                                    list.push((l.id.clone(), p, label));
+                                if let Some(snap) = st.snaps.get(&l.id) {
+                                    let dirty = snap.dirty_files + snap.untracked;
+                                    if snap.behind > 0 && dirty == 0 && snap.ahead == 0 {
+                                        let label = if l.label.is_empty() { r.name.clone() } else { format!("{} ({})", r.name, l.label) };
+                                        list.push((l.id.clone(), p, label));
+                                    }
                                 }
                             }
                         }
@@ -1686,10 +1687,12 @@ fn run_smart_sync(
                 list
             };
 
+            let mut any_linked = false;
             for item in missing_clones {
                 let target_p = std::path::Path::new(&item.target_path);
                 // Wenn Verzeichnis bereits existiert und ein Git Repo ist: direkt verlinken
                 if target_p.join(".git").exists() || target_p.is_dir() {
+                    any_linked = true;
                     let (w, s, rid, tp) = (weak.clone(), state_clone.clone(), item.repo_id.clone(), item.target_path.clone());
                     let _ = slint::invoke_from_event_loop(move || {
                         let Some(ui) = w.upgrade() else { return };
@@ -1719,6 +1722,9 @@ fn run_smart_sync(
 
                 let res = git.clone_repo(&item.source, target_p).map_err(|e| e.to_string());
                 let res_ok = res.is_ok();
+                if res_ok {
+                    any_linked = true;
+                }
                 let (w, s, rid, tp, r_val) = (weak.clone(), state_clone.clone(), item.repo_id.clone(), item.target_path.clone(), res);
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(ui) = w.upgrade() else { return };
@@ -1741,6 +1747,27 @@ fn run_smart_sync(
                     }
                     apply(&ui, &mut st);
                 });
+            }
+
+            if any_linked && do_commit_push {
+                let repo_org_paths: Vec<(String, PathBuf)> = {
+                    let st = state_clone.lock().unwrap();
+                    st.shared.locations.iter()
+                        .filter(|l| l.repo_id == "repoorganizer")
+                        .filter_map(|l| match resolved(&st, l) {
+                            Resolved::Local(p) if p.is_dir() => Some((l.id.clone(), p)),
+                            _ => None,
+                        })
+                        .collect()
+                };
+                for (rid, rp) in repo_org_paths {
+                    let s = git.snapshot(&rid, &rp);
+                    if s.dirty_files + s.untracked > 0 {
+                        let _ = git.stage_all(&rp);
+                        let _ = git.commit(&rp, "Smart-Sync: Basispfade in repos.toml aktualisiert");
+                        let _ = git.push(&rp);
+                    }
+                }
             }
         }
 

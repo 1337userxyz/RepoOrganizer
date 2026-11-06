@@ -545,7 +545,7 @@ export component MainWindow inherits Window {
     in-out property <bool> sync-opt-pull: true;
     in-out property <bool> sync-opt-commit-push: true;
     in-out property <string> sync-commit-msg: "Smart-Sync Update";
-    in-out property <bool> sync-opt-clone-missing: true;
+    in-out property <bool> sync-opt-clone-missing: false;
     in-out property <bool> sync-opt-auto-sync: true;
     property <int> sync-selected-actions: (root.sync-opt-pull ? root.sync-behind-count : 0) + (root.sync-opt-commit-push ? (root.sync-dirty-count + root.sync-ahead-count) : 0) + (root.sync-opt-clone-missing ? root.sync-missing-bp-count : 0);
 
