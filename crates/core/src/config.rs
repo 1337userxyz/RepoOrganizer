@@ -68,13 +68,22 @@ impl SharedConfig {
     /// Stabiler Pfad im Programmverzeichnis (`repos.toml`).
     pub fn program_dir_path() -> PathBuf {
         if let Ok(cwd) = std::env::current_dir() {
-            if cwd.join("Cargo.toml").exists() || cwd.join("repos.toml").exists() || cwd.join("starter.bat").exists() {
+            if cwd.join("Cargo.toml").exists()
+                || cwd.join("repos.toml").exists()
+                || cwd.join("start-windows.bat").exists()
+                || cwd.join("start-linux.sh").exists()
+                || cwd.join("starter.bat").exists()
+            {
                 return cwd.join("repos.toml");
             }
         }
         if let Ok(exe) = std::env::current_exe() {
             for anc in exe.ancestors().skip(1) {
-                if anc.join("Cargo.toml").exists() || anc.join("starter.bat").exists() {
+                if anc.join("Cargo.toml").exists()
+                    || anc.join("start-windows.bat").exists()
+                    || anc.join("start-linux.sh").exists()
+                    || anc.join("starter.bat").exists()
+                {
                     return anc.join("repos.toml");
                 }
             }

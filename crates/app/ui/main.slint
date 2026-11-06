@@ -191,12 +191,15 @@ component AuthorBars inherits Rectangle {
 
 export component ScanWindow inherits Window {
     title: "RepoOrganizer – Scan-Assistent";
-    preferred-width: 780px;
-    preferred-height: 540px;
+    min-width: 860px;
+    min-height: 580px;
+    preferred-width: 920px;
+    preferred-height: 640px;
 
     in property <[ScanRow]> scan-rows;
     in property <bool> scanning;
     in property <string> scan-progress;
+    in-out property <string> scan-roots: "";
 
     public function apply-theme(t: string) {
         Palette.color-scheme = t == "dark" ? ColorScheme.dark : t == "light" ? ColorScheme.light : ColorScheme.unknown;
@@ -206,6 +209,7 @@ export component ScanWindow inherits Window {
     callback scan-cancel();
     callback scan-toggle(int);
     callback scan-adopt();
+    callback browse-roots();
     callback close-window();
 
     VerticalLayout {
@@ -224,20 +228,30 @@ export component ScanWindow inherits Window {
         }
         HorizontalLayout {
             spacing: 8px;
-            roots-edit := LineEdit { placeholder-text: "z. B. R:\\git; D:\\projekte"; horizontal-stretch: 1; }
+            roots-edit := LineEdit {
+                text <=> root.scan-roots;
+                placeholder-text: "z. B. R:\\git; D:\\projekte";
+                horizontal-stretch: 1;
+            }
+            Button {
+                text: "Ordner wählen…";
+                enabled: !root.scanning;
+                clicked => { root.browse-roots(); }
+            }
             Text { text: "Tiefe:"; font-size: 12px; vertical-alignment: center; }
             depth-edit := LineEdit { text: "4"; width: 60px; input-type: number; }
             Button {
                 text: root.scanning ? "Abbrechen" : "Scannen";
                 primary: !root.scanning;
-                enabled: root.scanning || roots-edit.text != "";
+                enabled: root.scanning || root.scan-roots != "";
                 clicked => {
-                    if (root.scanning) { root.scan-cancel(); } else { root.scan-start(roots-edit.text, depth-edit.text); }
+                    if (root.scanning) { root.scan-cancel(); } else { root.scan-start(root.scan-roots, depth-edit.text); }
                 }
             }
         }
         Text { text: root.scan-progress; font-size: 12px; opacity: 0.75; overflow: elide; }
         Rectangle {
+            min-height: 280px;
             vertical-stretch: 1;
             border-width: 1px;
             border-color: #80808030;
@@ -279,8 +293,10 @@ export component ScanWindow inherits Window {
 
 export component SettingsWindow inherits Window {
     title: "RepoOrganizer – Programmeinstellungen";
-    preferred-width: 820px;
-    preferred-height: 520px;
+    min-width: 920px;
+    min-height: 640px;
+    preferred-width: 980px;
+    preferred-height: 700px;
 
     in-out property <string> cfg-theme;
     in-out property <string> cfg-git-user;
@@ -424,6 +440,8 @@ export component SettingsWindow inherits Window {
 
 export component MainWindow inherits Window {
     title: "RepoOrganizer";
+    min-width: 1080px;
+    min-height: 680px;
     preferred-width: 1360px;
     preferred-height: 840px;
 

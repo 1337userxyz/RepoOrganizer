@@ -1,4 +1,4 @@
-﻿mod present;
+mod present;
 
 use repoorganizer_core::config::{detect_user_from_url, LocalConfig, SharedConfig};
 use repoorganizer_core::model::{Location, OsPaths, Repo, Role, Snapshot, Status};
@@ -1116,7 +1116,48 @@ fn open_url(url: &str) {
     };
 }
 
+#[cfg(target_os = "linux")]
+fn ensure_linux_dialog_ready() {
+    extern "C" {
+        fn dlopen(filename: *const std::os::raw::c_char, flag: std::os::raw::c_int) -> *mut std::ffi::c_void;
+    }
+    const RTLD_NOW: std::os::raw::c_int = 2;
+    const RTLD_GLOBAL: std::os::raw::c_int = 256;
+
+    unsafe {
+        let name = std::ffi::CString::new("libdbus-1.so.3").unwrap();
+        let handle = dlopen(name.as_ptr(), RTLD_NOW | RTLD_GLOBAL);
+        if !handle.is_null() {
+            return;
+        }
+    }
+
+    if let Ok(entries) = std::fs::read_dir("/nix/store") {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.contains("dbus") && name.ends_with("-lib") {
+                    let so = path.join("lib").join("libdbus-1.so.3");
+                    if so.exists() {
+                        if let Ok(c_so) = std::ffi::CString::new(so.to_string_lossy().as_bytes()) {
+                            unsafe {
+                                let handle = dlopen(c_so.as_ptr(), RTLD_NOW | RTLD_GLOBAL);
+                                if !handle.is_null() {
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn main() -> Result<(), slint::PlatformError> {
+    #[cfg(target_os = "linux")]
+    ensure_linux_dialog_ready();
+
     if std::env::args().nth(1).as_deref() == Some("status") {
         let lp = LocalConfig::default_path().unwrap_or_else(|| PathBuf::from("local.toml"));
         let local = LocalConfig::load(&lp).unwrap_or_default();
@@ -1178,7 +1219,9 @@ fn main() -> Result<(), slint::PlatformError> {
     let ui = MainWindow::new()?;
     ui.window().set_size(slint::LogicalSize::new(local.window_width as f32, local.window_height as f32));
     let scan_win = ScanWindow::new()?;
+    scan_win.window().set_size(slint::LogicalSize::new(920.0, 640.0));
     let settings_win = SettingsWindow::new()?;
+    settings_win.window().set_size(slint::LogicalSize::new(980.0, 700.0));
 
     let state: Shared = Arc::new(Mutex::new(State {
         local,
@@ -1397,6 +1440,10 @@ fn main() -> Result<(), slint::PlatformError> {
             if let Some(w) = sw.upgrade() {
                 let theme = state.lock().unwrap().local.theme.clone();
                 w.invoke_apply_theme(theme.as_str().into());
+                let sz = w.window().size();
+                if sz.width < 860 || sz.height < 580 {
+                    w.window().set_size(slint::LogicalSize::new(920.0, 640.0));
+                }
                 let _ = w.show();
             }
         });
@@ -1408,6 +1455,10 @@ fn main() -> Result<(), slint::PlatformError> {
                 let st = state.lock().unwrap();
                 sync_settings_fields(&w, &st);
                 w.invoke_apply_theme(st.local.theme.as_str().into());
+                let sz = w.window().size();
+                if sz.width < 920 || sz.height < 640 {
+                    w.window().set_size(slint::LogicalSize::new(980.0, 700.0));
+                }
                 let _ = w.show();
             }
         });
@@ -1420,6 +1471,52 @@ fn main() -> Result<(), slint::PlatformError> {
             if let Some(w) = sw.upgrade() {
                 let _ = w.hide();
             }
+        });
+    }
+    {
+        let sw = scan_win.as_weak();
+        scan_win.on_browse_roots(move || {
+            let handle = sw.clone();
+            let current_roots = sw.upgrade().map(|w| w.get_scan_roots().to_string()).unwrap_or_default();
+            std::thread::spawn(move || {
+                let mut dialog = rfd::FileDialog::new().set_title("Wurzelordner für Scan wählen");
+                let last_path = current_roots.split(';').map(|s| s.trim()).filter(|s| !s.is_empty()).last();
+                if let Some(lp) = last_path {
+                    let pb = PathBuf::from(lp);
+                    if pb.is_dir() {
+                        dialog = dialog.set_directory(&pb);
+                    } else if let Some(parent) = pb.parent() {
+                        if parent.is_dir() {
+                            dialog = dialog.set_directory(parent);
+                        }
+                    }
+                } else if let Ok(cwd) = std::env::current_dir() {
+                    dialog = dialog.set_directory(&cwd);
+                }
+                if let Some(folder) = dialog.pick_folder() {
+                    let path_str = folder.to_string_lossy().to_string();
+                    let _ = handle.upgrade_in_event_loop(move |w| {
+                        let current = w.get_scan_roots().to_string();
+                        let current_trimmed = current.trim();
+                        let new_text = if current_trimmed.is_empty() {
+                            path_str
+                        } else {
+                            let parts: Vec<&str> = current_trimmed.split(';').map(|s| s.trim()).collect();
+                            if parts.contains(&path_str.as_str()) {
+                                current
+                            } else {
+                                let base = current.trim_end();
+                                if base.ends_with(';') {
+                                    format!("{} {}", base, path_str)
+                                } else {
+                                    format!("{}; {}", base, path_str)
+                                }
+                            }
+                        };
+                        w.set_scan_roots(new_text.into());
+                    });
+                }
+            });
         });
     }
     {

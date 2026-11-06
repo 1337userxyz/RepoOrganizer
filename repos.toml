@@ -90,6 +90,15 @@ role = "primary"
 windows = 'R:\git\RepoOrganizer'
 
 [[location]]
+id = "repoorganizer-1-2"
+repo_id = "repoorganizer"
+label = "RepoOrganizer"
+role = "backup"
+
+[location.paths]
+linux = "/r/git/RepoOrganizer"
+
+[[location]]
 id = "startrekcomputer-1"
 repo_id = "startrekcomputer"
 label = "StarTrekComputer"
