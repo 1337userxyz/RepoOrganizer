@@ -4,7 +4,7 @@ Rust + Slint Übersicht über Git-Repositories mit mehreren, plattformabhängige
 
 ## Starten
 
-- **Linux:** `./start-linux.sh`
-- **Windows:** `start-windows.bat`
+- **Linux:** `./start-repoorganizer-linux.sh` (oder `./start-linux.sh`)
+- **Windows:** `start-repoorganizer-windows.bat` (oder `start-windows.bat`)
 
 

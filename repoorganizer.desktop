@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=RepoOrganizer
+GenericName=Git Repository Manager
+Comment=Übersicht über Git-Repositories mit Multi-OS-Standorten
+Exec=/home/tristan/.local/bin/repoorganizer
+Icon=/home/tristan/.local/share/icons/repoorganizer.png
+Terminal=false
+Categories=Development;RevisionControl;
+StartupNotify=true

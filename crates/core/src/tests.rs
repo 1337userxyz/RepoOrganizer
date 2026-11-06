@@ -9,7 +9,7 @@ fn loc(win: Option<&str>, lin: Option<&str>) -> Location {
         id: "l1".into(),
         repo_id: "r1".into(),
         label: String::new(),
-        paths: OsPaths { windows: win.map(Into::into), linux: lin.map(Into::into), macos: None },
+        paths: OsPaths { path: None, windows: win.map(Into::into), linux: lin.map(Into::into), macos: None },
         role: Role::Primary,
         auto_fetch: false,
     }
@@ -32,6 +32,14 @@ fn resolve_with_mapping_both_directions() {
     let m = [PathMapping { windows: r"R:\".into(), unix: "/mnt/r/".into() }];
     assert_eq!(resolve(&loc(Some(r"R:\git\x"), None), Os::Linux, &m), Resolved::Local("/mnt/r/git/x".into()));
     assert_eq!(resolve(&loc(None, Some("/mnt/r/git/x")), Os::Windows, &m), Resolved::Local(r"R:\git\x".into()));
+}
+
+#[test]
+fn resolve_auto_map_existing_directory() {
+    let l = loc(Some(r"R:\git\RepoOrganizer"), None);
+    if std::path::Path::new("/r/git/RepoOrganizer").exists() {
+        assert_eq!(resolve(&l, Os::Linux, &[]), Resolved::Local("/r/git/RepoOrganizer".into()));
+    }
 }
 
 fn sample() -> SharedConfig {

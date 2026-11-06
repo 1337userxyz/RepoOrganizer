@@ -97,9 +97,63 @@ fn dir_name(path: &str) -> String {
 }
 
 fn add_location(cfg: &mut SharedConfig, os: Os, repo_id: &str, path: &str, label: String) {
+    let p_norm = norm_path(path);
+    // Prüfen, ob bereits ein Standort dieses Repos auf denselben lokalen Pfad auflöst
+    for l in cfg.locations.iter_mut().filter(|l| l.repo_id == repo_id) {
+        if let Resolved::Local(lp) = resolve(l, os, &cfg.mappings) {
+            if norm_path(&lp.to_string_lossy()) == p_norm {
+                // Standort existiert bereits, Pfad für das aktuelle OS sicherstellen
+                set_path(&mut l.paths, os, path.to_string());
+                return;
+            }
+        }
+    }
+    // Prüfen, ob ein vorhandener Standort für ein anderes OS denselben physischen Pfad meint
+    for l in cfg.locations.iter_mut().filter(|l| l.repo_id == repo_id) {
+        let has_this_os = match os {
+            Os::Windows => l.paths.windows.is_some(),
+            Os::Linux => l.paths.linux.is_some(),
+            Os::MacOs => l.paths.macos.is_some(),
+        };
+        if !has_this_os {
+            let matches_other = [Os::Windows, Os::Linux, Os::MacOs].into_iter().any(|other_os| {
+                if other_os != os {
+                    if let Some(other_path) = match other_os {
+                        Os::Windows => l.paths.windows.as_ref(),
+                        Os::Linux => l.paths.linux.as_ref(),
+                        Os::MacOs => l.paths.macos.as_ref(),
+                    } {
+                        if norm_path(other_path) == p_norm {
+                            return true;
+                        }
+                        if let Some(mapped) = crate::paths::auto_map_from(other_os, os, other_path) {
+                            if norm_path(&mapped.to_string_lossy()) == p_norm {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                false
+            });
+            if matches_other {
+                set_path(&mut l.paths, os, path.to_string());
+                return;
+            }
+        }
+    }
+
     let id = unique(|i| cfg.locations.iter().any(|l| l.id == i), &format!("{repo_id}-1"));
     let mut paths = OsPaths::default();
     set_path(&mut paths, os, path.to_string());
+    for target_os in [Os::Windows, Os::Linux, Os::MacOs] {
+        if target_os != os {
+            if let Some(m) = crate::paths::map_from(os, target_os, path, &cfg.mappings) {
+                set_path(&mut paths, target_os, m);
+            } else if let Some(m) = crate::paths::auto_map_from(os, target_os, path) {
+                set_path(&mut paths, target_os, m.to_string_lossy().to_string());
+            }
+        }
+    }
     let role = if cfg.locations.iter().any(|l| l.repo_id == repo_id) { Role::Backup } else { Role::Primary };
     cfg.locations.push(Location { id, repo_id: repo_id.into(), label, paths, role, auto_fetch: false });
 }

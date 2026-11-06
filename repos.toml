@@ -1,5 +1,13 @@
 version = 1
 
+[[mapping]]
+windows = 'R:\'
+unix = "/r/"
+
+[base_paths]
+shared_unix = "/r/git"
+local_linux = "/home/tristan/Projekte"
+
 [[repo]]
 id = "configurable-csv-analyzer-rust"
 name = "configurable-csv-analyzer-rust"
@@ -21,6 +29,11 @@ name = "NetworkDriveManager"
 remote_url = "https://github.com/1337userxyz/NetworkDriveManager.git"
 
 [[repo]]
+id = "nixos-config"
+name = "nixos-config"
+remote_url = "https://github.com/1337userxyz/nixos-config.git"
+
+[[repo]]
 id = "pwsh7-scripts"
 name = "pwsh7-scripts"
 remote_url = "https://github.com/1337userxyz/pwsh7-scripts.git"
@@ -29,6 +42,10 @@ remote_url = "https://github.com/1337userxyz/pwsh7-scripts.git"
 id = "repoorganizer"
 name = "RepoOrganizer"
 remote_url = "https://github.com/1337userxyz/RepoOrganizer.git"
+
+[[repo]]
+id = "star-trek-skills"
+name = "star-trek-skills"
 
 [[repo]]
 id = "startrekcomputer"
@@ -43,6 +60,7 @@ role = "primary"
 
 [location.paths]
 windows = 'R:\git\configurable-csv-analyzer-rust'
+linux = "/r/git/configurable-csv-analyzer-rust"
 
 [[location]]
 id = "configurablecsvanalyzer-1"
@@ -72,6 +90,15 @@ role = "primary"
 windows = 'R:\git\NetworkDriveManager'
 
 [[location]]
+id = "nixos-config-1"
+repo_id = "nixos-config"
+label = "nixos-config"
+role = "primary"
+
+[location.paths]
+linux = "/home/tristan/Projekte/nixos-config"
+
+[[location]]
 id = "pwsh7-scripts-1"
 repo_id = "pwsh7-scripts"
 label = "pwsh7-scripts"
@@ -83,20 +110,30 @@ windows = 'R:\git\pwsh7-scripts'
 [[location]]
 id = "repoorganizer-1"
 repo_id = "repoorganizer"
-label = "RepoOrganizer"
+label = "RepoOrganizer (Shared/RAM-Disk)"
 role = "primary"
 
 [location.paths]
 windows = 'R:\git\RepoOrganizer'
+linux = "/r/git/RepoOrganizer"
 
 [[location]]
-id = "repoorganizer-1-2"
+id = "repoorganizer-local"
 repo_id = "repoorganizer"
-label = "RepoOrganizer"
+label = "RepoOrganizer (Lokal)"
 role = "backup"
 
 [location.paths]
-linux = "/r/git/RepoOrganizer"
+linux = "/home/tristan/Projekte/RepoOrganizer"
+
+[[location]]
+id = "star-trek-skills-1"
+repo_id = "star-trek-skills"
+label = "star-trek-skills"
+role = "primary"
+
+[location.paths]
+linux = "/home/tristan/Projekte/star-trek-skills"
 
 [[location]]
 id = "startrekcomputer-1"
@@ -106,3 +143,12 @@ role = "primary"
 
 [location.paths]
 windows = 'R:\git\StarTrekComputer'
+
+[[location]]
+id = "startrekcomputer-1-2"
+repo_id = "startrekcomputer"
+label = "StarTrekComputer"
+role = "backup"
+
+[location.paths]
+linux = "/home/tristan/Projekte/StarTrekComputer"

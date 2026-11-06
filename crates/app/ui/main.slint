@@ -71,9 +71,17 @@ export struct LocationRow {
     behind: int,
     dirty: int,
     stashes: int,
+    working-tree: string,
+    working-tree-kind: int,
     fetched: string,
     pulled: string,
     other-os: bool,
+}
+
+export struct MissingBasePathRow {
+    label: string,
+    target-path: string,
+    base-kind: string,
 }
 
 export struct RepoRow {
@@ -86,11 +94,14 @@ export struct RepoRow {
     kind: int,
     branch: string,
     sync-info: string,
+    sync-kind: int,
     last-commit: string,
     commits: string,
     files: string,
     size: string,
+    size-kind: int,
     build-size: string,
+    build-kind: int,
     locations: int,
     favorite: bool,
     has-drift: bool,
@@ -304,6 +315,10 @@ export component SettingsWindow inherits Window {
     in-out property <string> cfg-refresh-secs;
     in-out property <string> cfg-timeout-secs;
     in-out property <string> cfg-stale-days;
+    in-out property <string> cfg-shared-win;
+    in-out property <string> cfg-shared-unix;
+    in-out property <string> cfg-local-linux;
+    in-out property <string> cfg-local-win;
     in property <[MappingRow]> cfg-mappings;
     in property <[CheckRow]> cfg-checks;
 
@@ -312,7 +327,8 @@ export component SettingsWindow inherits Window {
     }
 
     callback theme-changed(string);
-    callback save-settings(string, string, string, string, string, string);
+    callback save-settings(string, string, string, string, string, string, string, string, string, string);
+    callback browse-base-path(string);
     callback add-mapping(string, string);
     callback remove-mapping(int);
     callback toggle-health-check(string);
@@ -328,7 +344,7 @@ export component SettingsWindow inherits Window {
                 text: "Speichern & Schließen";
                 primary: true;
                 clicked => {
-                    root.save-settings(root.cfg-theme, root.cfg-git-user, root.cfg-git-path, root.cfg-refresh-secs, root.cfg-timeout-secs, root.cfg-stale-days);
+                    root.save-settings(root.cfg-theme, root.cfg-git-user, root.cfg-git-path, root.cfg-refresh-secs, root.cfg-timeout-secs, root.cfg-stale-days, root.cfg-shared-win, root.cfg-shared-unix, root.cfg-local-linux, root.cfg-local-win);
                     root.close-window();
                 }
             }
@@ -405,6 +421,32 @@ export component SettingsWindow inherits Window {
                             Text { text: "Veraltet nach (Tage):"; width: 190px; vertical-alignment: center; }
                             LineEdit { text <=> root.cfg-stale-days; input-type: number; width: 110px; }
                         }
+                        Text { text: "Standard-Basispfade (repos.toml / Hauptkonfig)"; font-weight: 700; font-size: 14px; }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: "Geteilt Unix (z. B. /r/git):"; width: 190px; vertical-alignment: center; }
+                            LineEdit { text <=> root.cfg-shared-unix; placeholder-text: "/r/git"; horizontal-stretch: 1; }
+                            Button { text: "Wählen…"; clicked => { root.browse-base-path("shared_unix"); } }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: "Geteilt Windows (z. B. R:\\git):"; width: 190px; vertical-alignment: center; }
+                            LineEdit { text <=> root.cfg-shared-win; placeholder-text: "R:\\git"; horizontal-stretch: 1; }
+                            Button { text: "Wählen…"; clicked => { root.browse-base-path("shared_win"); } }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: "Lokal Linux (z. B. ~/Projekte):"; width: 190px; vertical-alignment: center; }
+                            LineEdit { text <=> root.cfg-local-linux; placeholder-text: "/home/.../Projekte"; horizontal-stretch: 1; }
+                            Button { text: "Wählen…"; clicked => { root.browse-base-path("local_linux"); } }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: "Lokal Windows (z. B. C:\\Projekte):"; width: 190px; vertical-alignment: center; }
+                            LineEdit { text <=> root.cfg-local-win; placeholder-text: "C:\\Projekte"; horizontal-stretch: 1; }
+                            Button { text: "Wählen…"; clicked => { root.browse-base-path("local_win"); } }
+                        }
+
                         Text { text: "Pfad-Mappings Windows ↔ Linux/macOS (repos.toml)"; font-weight: 700; font-size: 14px; }
                         HorizontalLayout {
                             spacing: 6px;
@@ -439,7 +481,7 @@ export component SettingsWindow inherits Window {
 }
 
 export component MainWindow inherits Window {
-    title: "RepoOrganizer";
+    title: "RepoOrganizer v0.1.0";
     min-width: 1080px;
     min-height: 680px;
     preferred-width: 1360px;
@@ -474,6 +516,27 @@ export component MainWindow inherits Window {
     in property <bool> selected-favorite;
     in property <string> active-view;
     in-out property <bool> tasks-open: false;
+
+    // Offline & Klonen
+    in property <bool> selected-is-offline: false;
+    in-out property <string> selected-suggested-dest: "";
+    in-out property <string> new-location-path: "";
+    in property <[MissingBasePathRow]> missing-base-paths;
+
+    // Schnell-Commit & Push für aktiven Standort
+    in property <string> selected-active-loc-id: "";
+    in property <string> selected-active-loc-name: "";
+    in property <int> selected-dirty-count: 0;
+    in property <int> selected-ahead-count: 0;
+
+    // Globaler Toolbar-Commit & Push
+    in-out property <bool> quick-commit-open: false;
+    in property <int> dirty-repos-count: 0;
+    in property <string> quick-commit-target-id: "";
+    in property <string> quick-commit-target-desc: "";
+
+    callback do-quick-commit-push(string);
+    callback do-quick-commit(string);
 
     // Spalten-Filter & Sortierung im DataGrid-Kopf
     in-out property <int> col-repo-filter: 0;
@@ -511,6 +574,9 @@ export component MainWindow inherits Window {
     callback open-settings();
     callback clone-repo(string, string);
     callback clone-location(string, string);
+    callback clone-offline-location(string);
+    callback browse-clone-dest();
+    callback browse-new-location();
     callback link-location(string, string);
     callback open-in(string, string);
     callback delete-location(string);
@@ -519,6 +585,7 @@ export component MainWindow inherits Window {
     callback delete-repo(string);
     callback clean-repo-builds(string);
     callback clean-all-builds();
+    callback create-in-base-path(string, string);
     in-out property <string> disk-info: "";
 
     property <bool> adding: false;
@@ -603,7 +670,68 @@ export component MainWindow inherits Window {
                     }
                     Button { text: root.busy ? "Aktualisiere…" : "Aktualisieren"; enabled: !root.busy; clicked => { root.refresh(); } }
                     Button { text: "Alle fetchen"; enabled: !root.busy; clicked => { root.fetch-all(""); } }
+                    Button {
+                        text: root.dirty-repos-count > 0 ? ("Commit & Push (" + root.dirty-repos-count + ") 🚀") : "Commit & Push 🚀";
+                        primary: root.dirty-repos-count > 0;
+                        enabled: !root.busy;
+                        clicked => { root.quick-commit-open = !root.quick-commit-open; }
+                    }
                     Button { text: "Repo hinzufügen"; clicked => { root.adding = !root.adding; } }
+                }
+
+                if root.quick-commit-open: Rectangle {
+                    background: #2e9e5b18;
+                    border-width: 1px;
+                    border-color: #2e9e5b66;
+                    border-radius: 6px;
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        padding-top: 6px;
+                        padding-bottom: 6px;
+                        spacing: 10px;
+                        Text {
+                            text: "🚀 Schnell-Commit & Push: " + root.quick-commit-target-desc;
+                            font-weight: 700;
+                            font-size: 12px;
+                            color: #2e9e5b;
+                            vertical-alignment: center;
+                        }
+                        qmsg := LineEdit {
+                            placeholder-text: "Commit-Nachricht eingeben… (Enter für Commit & Push)";
+                            horizontal-stretch: 1;
+                            accepted => {
+                                if qmsg.text != "" {
+                                    root.do-quick-commit-push(qmsg.text);
+                                    qmsg.text = "";
+                                    root.quick-commit-open = false;
+                                }
+                            }
+                        }
+                        Button {
+                            text: "Pushen 🚀";
+                            primary: true;
+                            enabled: qmsg.text != "";
+                            clicked => {
+                                root.do-quick-commit-push(qmsg.text);
+                                qmsg.text = "";
+                                root.quick-commit-open = false;
+                            }
+                        }
+                        Button {
+                            text: "Nur Commit";
+                            enabled: qmsg.text != "";
+                            clicked => {
+                                root.do-quick-commit(qmsg.text);
+                                qmsg.text = "";
+                                root.quick-commit-open = false;
+                            }
+                        }
+                        Button {
+                            text: "×";
+                            clicked => { root.quick-commit-open = false; }
+                        }
+                    }
                 }
 
                 if root.adding: HorizontalLayout {
@@ -684,38 +812,40 @@ export component MainWindow inherits Window {
                                 }
                                 ColSep {}
                                 ComboBox {
-                                    width: 112px;
-                                    model: ["Status: Alle", "Aktuell", "Geändert", "Voraus", "Hinter", "Divergiert", "Fehler", "Offline"];
+                                    width: 145px;
+                                    model: ["Remote: Alle", "✓ Synchron", "↑ Zu senden (Push)", "↓ Zu holen (Pull)", "⇄ Divergiert", "💻 Nur lokal", "⭘ Offline", "⚠ Fehler"];
                                     current-index <=> root.col-status-filter;
                                     selected => { root.column-filter-changed(); }
                                 }
                                 ColSep {}
                                 ComboBox {
-                                    width: 110px;
+                                    width: 95px;
                                     model: root.branch-options;
                                     current-value <=> root.col-branch-filter;
                                     selected => { root.column-filter-changed(); }
                                 }
                                 ColSep {}
                                 ComboBox {
-                                    width: 120px;
-                                    model: ["Sync: Alle", "✓ Sauber", "Δ Geändert", "↑ Voraus", "↓ Hinter", "📦 Stash"];
+                                    width: 135px;
+                                    model: ["Dateien: Alle", "✓ Sauber", "✎ Uncommittet", "📦 Mit Stash"];
                                     current-index <=> root.col-sync-filter;
                                     selected => { root.column-filter-changed(); }
                                 }
                                 ColSep {}
                                 ComboBox {
-                                    width: 170px;
+                                    width: 155px;
                                     model: ["Commit: Neueste ↓", "Commit: Älteste ↑", "Heute (24h)", "Letzte 7 Tage", "Letzte 30 Tage", "> 30 Tage alt"];
                                     current-index <=> root.col-commit-filter;
                                     selected => { root.column-filter-changed(); }
                                 }
                                 ColSep {}
-                                Text { text: "Commits"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 62px; horizontal-alignment: right; vertical-alignment: center; }
+                                Text { text: "Commits"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 52px; horizontal-alignment: right; vertical-alignment: center; }
                                 ColSep {}
-                                Text { text: "Dateien"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 62px; horizontal-alignment: right; vertical-alignment: center; }
+                                Text { text: "Dateien"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 52px; horizontal-alignment: right; vertical-alignment: center; }
                                 ColSep {}
-                                Text { text: "Git / Build"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 120px; horizontal-alignment: right; vertical-alignment: center; }
+                                Text { text: "Git-Größe"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 66px; horizontal-alignment: right; vertical-alignment: center; }
+                                ColSep {}
+                                Text { text: "Build-Größe"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 68px; horizontal-alignment: right; vertical-alignment: center; }
                                 ColSep {}
                                 Text { text: "Orte"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 36px; horizontal-alignment: center; vertical-alignment: center; }
                                 ColSep {}
@@ -780,9 +910,9 @@ export component MainWindow inherits Window {
                                     }
                                     ColSep {}
 
-                                    // 2. Status Badge
+                                    // 2. Remote-Sync Badge
                                     Rectangle {
-                                        width: 112px;
+                                        width: 145px;
                                         Badge {
                                             x: 0;
                                             y: (parent.height - self.height) / 2;
@@ -796,18 +926,19 @@ export component MainWindow inherits Window {
                                     Text {
                                         text: repo.branch != "" ? ("⎇ " + repo.branch) : "–";
                                         font-size: 12px;
-                                        width: 110px;
+                                        width: 95px;
                                         vertical-alignment: center;
                                         overflow: elide;
                                     }
                                     ColSep {}
 
-                                    // 4. Sync / Dirty
+                                    // 4. Arbeitskopie (Dateien auf Festplatte)
                                     Text {
                                         text: repo.sync-info;
                                         font-size: 12px;
-                                        color: repo.kind == 2 ? #d98e04 : (repo.kind == 1 ? #2a7fd4 : Palette.foreground.with-alpha(0.75));
-                                        width: 120px;
+                                        font-weight: repo.sync-kind == 2 ? 600 : 400;
+                                        color: repo.sync-kind == 2 ? #d98e04 : #2e9e5b;
+                                        width: 135px;
                                         vertical-alignment: center;
                                         overflow: elide;
                                     }
@@ -817,7 +948,7 @@ export component MainWindow inherits Window {
                                     Text {
                                         text: repo.last-commit;
                                         font-size: 12px;
-                                        width: 170px;
+                                        width: 155px;
                                         vertical-alignment: center;
                                         overflow: elide;
                                     }
@@ -827,7 +958,7 @@ export component MainWindow inherits Window {
                                     Text {
                                         text: repo.commits;
                                         font-size: 12px;
-                                        width: 62px;
+                                        width: 52px;
                                         horizontal-alignment: right;
                                         vertical-alignment: center;
                                     }
@@ -837,19 +968,31 @@ export component MainWindow inherits Window {
                                     Text {
                                         text: repo.files;
                                         font-size: 12px;
-                                        width: 62px;
+                                        width: 52px;
                                         horizontal-alignment: right;
                                         vertical-alignment: center;
                                     }
                                     ColSep {}
 
-                                    // 8. Größe (.git / Build)
+                                    // 8. Git-Größe (.git)
                                     Text {
-                                        text: repo.build-size != "-" && repo.build-size != "–" ? (repo.size + " / " + repo.build-size) : repo.size;
+                                        text: repo.size;
                                         font-size: 11px;
-                                        width: 120px;
+                                        width: 66px;
                                         horizontal-alignment: right;
                                         vertical-alignment: center;
+                                        color: repo.size-kind == 2 ? #e04347 : (repo.size-kind == 1 ? #d98e04 : #2e9e5b);
+                                    }
+                                    ColSep {}
+
+                                    // 9. Build-Größe
+                                    Text {
+                                        text: repo.build-size != "" && repo.build-size != "-" && repo.build-size != "–" ? repo.build-size : "–";
+                                        font-size: 11px;
+                                        width: 68px;
+                                        horizontal-alignment: right;
+                                        vertical-alignment: center;
+                                        color: repo.build-kind == 2 ? #e04347 : (repo.build-kind == 1 ? #d98e04 : #80808088);
                                     }
                                     ColSep {}
 
@@ -1015,6 +1158,156 @@ export component MainWindow inherits Window {
                             }
                         }
 
+                        // Schnell-Commit & Push: Automatische Erkennung des aktivsten/neuesten Standorts
+                        if root.selected-id != "" && root.selected-dirty-count > 0: Rectangle {
+                            background: #d98e041a;
+                            border-width: 1px;
+                            border-color: #d98e0477;
+                            border-radius: 6px;
+                            HorizontalLayout {
+                                padding-left: 10px;
+                                padding-right: 10px;
+                                padding-top: 5px;
+                                padding-bottom: 5px;
+                                spacing: 8px;
+                                Text {
+                                    text: "✎ " + root.selected-dirty-count + " uncommittete Datei" + (root.selected-dirty-count == 1 ? "" : "en") + " in " + root.selected-active-loc-name + ":";
+                                    font-size: 12px;
+                                    font-weight: 700;
+                                    color: #d98e04;
+                                    vertical-alignment: center;
+                                }
+                                fast-msg := LineEdit {
+                                    placeholder-text: "Commit-Nachricht eingeben… (Enter für Commit & Push)";
+                                    horizontal-stretch: 1;
+                                    accepted => {
+                                        if fast-msg.text != "" && root.selected-remote != "" {
+                                            root.commit-and-push(root.selected-active-loc-id, fast-msg.text);
+                                            fast-msg.text = "";
+                                        }
+                                    }
+                                }
+                                Button {
+                                    text: "Commit & Push 🚀";
+                                    primary: true;
+                                    enabled: fast-msg.text != "" && root.selected-remote != "";
+                                    clicked => {
+                                        root.commit-and-push(root.selected-active-loc-id, fast-msg.text);
+                                        fast-msg.text = "";
+                                    }
+                                }
+                                Button {
+                                    text: "Nur Commit";
+                                    enabled: fast-msg.text != "";
+                                    clicked => {
+                                        root.commit(root.selected-active-loc-id, fast-msg.text);
+                                        fast-msg.text = "";
+                                    }
+                                }
+                            }
+                        }
+
+                        // Schnell-Push: Falls Commits ungesendet sind
+                        if root.selected-id != "" && root.selected-dirty-count == 0 && root.selected-ahead-count > 0: Rectangle {
+                            background: #2a7fd41a;
+                            border-width: 1px;
+                            border-color: #2a7fd477;
+                            border-radius: 6px;
+                            HorizontalLayout {
+                                padding-left: 10px;
+                                padding-right: 10px;
+                                padding-top: 5px;
+                                padding-bottom: 5px;
+                                spacing: 8px;
+                                Text {
+                                    text: "↑ " + root.selected-ahead-count + " Commit" + (root.selected-ahead-count == 1 ? "" : "s") + " ungesendet in " + root.selected-active-loc-name + ":";
+                                    font-size: 12px;
+                                    font-weight: 700;
+                                    color: #2a7fd4;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                }
+                                Button {
+                                    text: "Jetzt Pushen 🚀 (" + root.selected-ahead-count + ")";
+                                    primary: true;
+                                    enabled: root.selected-remote != "";
+                                    clicked => {
+                                        root.location-action(root.selected-active-loc-id, "push");
+                                    }
+                                }
+                            }
+                        }
+
+                        // Angebot: Repo in fehlenden Basispfaden anlegen (z. B. RAM-Disk /r/git oder SSD ~/Projekte)
+                        if root.selected-id != "" && root.missing-base-paths.length > 0: Rectangle {
+                            background: #2a7fd415;
+                            border-width: 1px;
+                            border-color: #2a7fd455;
+                            border-radius: 6px;
+                            HorizontalLayout {
+                                padding-left: 10px;
+                                padding-right: 10px;
+                                padding-top: 5px;
+                                padding-bottom: 5px;
+                                spacing: 8px;
+                                Text {
+                                    text: "📁 In Basispfad erstellen:";
+                                    font-size: 12px;
+                                    font-weight: 700;
+                                    color: #2a7fd4;
+                                    vertical-alignment: center;
+                                }
+                                for mbp in root.missing-base-paths: Button {
+                                    text: "+ " + mbp.label;
+                                    primary: true;
+                                    clicked => {
+                                        root.create-in-base-path(root.selected-id, mbp.target-path);
+                                    }
+                                }
+                                Text {
+                                    text: "(klont automatisch & verknüpft neuen Standort)";
+                                    font-size: 11px;
+                                    opacity: 0.65;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                }
+                            }
+                        }
+
+                        // Banner: Repo ist auf diesem Rechner noch offline
+                        if root.selected-is-offline && root.selected-remote != "": Rectangle {
+                            background: #2a7fd418;
+                            border-color: #2a7fd4;
+                            border-width: 1px;
+                            border-radius: 6px;
+                            HorizontalLayout {
+                                padding: 8px;
+                                spacing: 8px;
+                                Text {
+                                    text: "📥 Auf diesem System nicht lokal vorhanden:";
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    color: #2a7fd4;
+                                    vertical-alignment: center;
+                                }
+                                LineEdit {
+                                    text <=> root.selected-suggested-dest;
+                                    placeholder-text: "Zielordner zum Klonen…";
+                                    horizontal-stretch: 1;
+                                }
+                                Button {
+                                    text: "Ordner…";
+                                    clicked => { root.browse-clone-dest(); }
+                                }
+                                Button {
+                                    text: "Jetzt klonen";
+                                    primary: true;
+                                    enabled: root.selected-suggested-dest != "";
+                                    clicked => { root.clone-location(root.selected-id, root.selected-suggested-dest); }
+                                }
+                            }
+                        }
+
                         ScrollView {
                             vertical-stretch: 1;
                             VerticalLayout {
@@ -1031,17 +1324,43 @@ export component MainWindow inherits Window {
                                         HorizontalLayout {
                                             spacing: 8px;
                                             Badge { text: loc.status; kind: loc.kind; y: (parent.height - self.height) / 2; }
+                                            if !loc.other-os && loc.kind != 4: Badge {
+                                                text: loc.working-tree;
+                                                kind: loc.working-tree-kind;
+                                                y: (parent.height - self.height) / 2;
+                                            }
                                             Text { text: loc.label + " (" + loc.role + ")"; font-weight: 600; vertical-alignment: center; }
                                             Text { text: loc.path; font-size: 12px; opacity: 0.8; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
                                             if loc.branch != "": Text {
-                                                text: "⎇ " + loc.branch + "   ↑" + loc.ahead + " ↓" + loc.behind + "   Δ" + loc.dirty + (loc.stashes > 0 ? "   📦" + loc.stashes : "");
+                                                text: "⎇ " + loc.branch;
                                                 font-size: 12px;
+                                                font-weight: 600;
+                                                vertical-alignment: center;
+                                            }
+                                            if loc.ahead > 0: Text {
+                                                text: "↑" + loc.ahead;
+                                                font-size: 12px;
+                                                font-weight: 600;
+                                                color: #2a7fd4;
+                                                vertical-alignment: center;
+                                            }
+                                            if loc.behind > 0: Text {
+                                                text: "↓" + loc.behind;
+                                                font-size: 12px;
+                                                font-weight: 600;
+                                                color: #d98e04;
                                                 vertical-alignment: center;
                                             }
                                             Text { text: "Fetch: " + loc.fetched + " · Pull: " + loc.pulled + (loc.build-size != "-" && loc.build-size != "–" ? " · Build: " + loc.build-size : ""); font-size: 11px; opacity: 0.65; vertical-alignment: center; }
+                                            if loc.other-os || loc.kind == 4: Button {
+                                                text: "📥 Klonen";
+                                                primary: true;
+                                                enabled: root.selected-remote != "";
+                                                clicked => { root.clone-offline-location(loc.id); }
+                                            }
                                             Button { text: "Fetch"; enabled: !loc.other-os && loc.kind != 4 && root.selected-remote != ""; clicked => { root.location-action(loc.id, "fetch"); } }
-                                            Button { text: "Pull"; enabled: loc.can-pull && root.selected-remote != ""; clicked => { root.location-action(loc.id, "pull"); } }
-                                            Button { text: "Push"; enabled: loc.can-push && root.selected-remote != ""; clicked => { root.location-action(loc.id, "push"); } }
+                                            Button { text: loc.behind > 0 ? ("Pull (" + loc.behind + ") ↓") : "Pull"; enabled: loc.can-pull && root.selected-remote != ""; clicked => { root.location-action(loc.id, "pull"); } }
+                                            Button { text: loc.ahead > 0 ? ("Push (" + loc.ahead + ") ↑") : "Push"; primary: loc.ahead > 0 && loc.dirty == 0; enabled: loc.can-push && root.selected-remote != ""; clicked => { root.location-action(loc.id, "push"); } }
                                             Button { text: "Stash"; enabled: loc.can-commit; clicked => { root.location-action(loc.id, "stash"); } }
                                             if loc.stashes > 0: Button { text: "Pop (" + loc.stashes + ")"; clicked => { root.location-action(loc.id, "stash_pop"); } }
                                             if loc.can-clean: Button { text: "Clean (" + loc.build-size + ")"; clicked => { root.location-action(loc.id, "clean"); } }
@@ -1072,8 +1391,15 @@ export component MainWindow inherits Window {
                                         }
                                         // Zeile 3 (nur wenn uncommittete Änderungen vorliegen): Commit & Schnell-Push
                                         if loc.can-commit: HorizontalLayout {
-                                            spacing: 6px;
-                                            msg := LineEdit { placeholder-text: "Commit-Nachricht für alle geänderten Dateien (Δ" + loc.dirty + ")…"; horizontal-stretch: 1; }
+                                            spacing: 8px;
+                                            Text {
+                                                text: "✎ Arbeitskopie (" + loc.dirty + " uncommittete Datei" + (loc.dirty == 1 ? "" : "en") + "):";
+                                                font-size: 12px;
+                                                font-weight: 600;
+                                                color: #d98e04;
+                                                vertical-alignment: center;
+                                            }
+                                            msg := LineEdit { placeholder-text: "Commit-Nachricht eingeben…"; horizontal-stretch: 1; }
                                             Button {
                                                 text: "Commit";
                                                 enabled: msg.text != "";
@@ -1092,16 +1418,24 @@ export component MainWindow inherits Window {
                         }
                         if root.selected-id != "": HorizontalLayout {
                             spacing: 6px;
-                            newloc-edit := LineEdit { placeholder-text: "Weiteren Standort hinzufügen (lokaler Pfad)…"; horizontal-stretch: 1; }
+                            LineEdit {
+                                text <=> root.new-location-path;
+                                placeholder-text: "Weiteren Standort hinzufügen (lokaler Pfad)…";
+                                horizontal-stretch: 1;
+                            }
+                            Button {
+                                text: "Ordner…";
+                                clicked => { root.browse-new-location(); }
+                            }
                             Button {
                                 text: "Verknüpfen";
-                                enabled: newloc-edit.text != "";
-                                clicked => { root.link-location(root.selected-id, newloc-edit.text); newloc-edit.text = ""; }
+                                enabled: root.new-location-path != "";
+                                clicked => { root.link-location(root.selected-id, root.new-location-path); root.new-location-path = ""; }
                             }
                             Button {
                                 text: "Klonen";
-                                enabled: newloc-edit.text != "" && root.selected-remote != "";
-                                clicked => { root.clone-location(root.selected-id, newloc-edit.text); newloc-edit.text = ""; }
+                                enabled: root.new-location-path != "" && root.selected-remote != "";
+                                clicked => { root.clone-location(root.selected-id, root.new-location-path); root.new-location-path = ""; }
                             }
                             Button { text: "Alle Standorte fetchen"; enabled: root.selected-remote != ""; clicked => { root.fetch-all(root.selected-id); } }
                             Button { text: "Repo bereinigen"; clicked => { root.clean-repo-builds(root.selected-id); } }

@@ -30,9 +30,11 @@ pub enum Role {
     Worktree,
 }
 
-/// Pfade je Betriebssystem.
+/// Pfade je Betriebssystem oder generischer Pfad.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct OsPaths {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub windows: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

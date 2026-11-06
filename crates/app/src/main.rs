@@ -198,13 +198,13 @@ fn apply(ui: &MainWindow, st: &mut State) {
                 return None;
             }
             let status_ok = match col_status {
-                1 => matches!(status, Status::UpToDate),
-                2 => matches!(status, Status::Dirty),
-                3 => matches!(status, Status::Ahead(_)),
-                4 => matches!(status, Status::Behind(_)),
-                5 => matches!(status, Status::Diverged),
-                6 => matches!(status, Status::Error(_) | Status::NotARepo),
-                7 => matches!(status, Status::Unavailable),
+                1 => matches!(status, Status::UpToDate) && ahead == 0 && behind == 0 && dirty == 0,
+                2 => ahead > 0,
+                3 => behind > 0,
+                4 => (ahead > 0 && behind > 0) || matches!(status, Status::Diverged),
+                5 => eff_remote.is_empty(),
+                6 => matches!(status, Status::Unavailable),
+                7 => matches!(status, Status::Error(_) | Status::NotARepo),
                 _ => true,
             };
             if !status_ok {
@@ -214,11 +214,9 @@ fn apply(ui: &MainWindow, st: &mut State) {
                 return None;
             }
             let sync_ok = match col_sync {
-                1 => ahead == 0 && behind == 0 && dirty == 0,
+                1 => dirty == 0,
                 2 => dirty > 0,
-                3 => ahead > 0,
-                4 => behind > 0,
-                5 => stashes > 0,
+                3 => stashes > 0,
                 _ => true,
             };
             if !sync_ok {
@@ -289,27 +287,72 @@ fn apply(ui: &MainWindow, st: &mut State) {
 
         let build_bytes: u64 = snaps.iter().map(|s| s.build_size_bytes).sum();
         let build_size = repoorganizer_core::clean::format_bytes(build_bytes);
+        let has_remote = !r.remote_url.is_empty();
         rows.push(RepoRow {
             id: r.id.as_str().into(),
             name: r.name.as_str().into(),
             remote: r.remote_url.as_str().into(),
             tags: r.tags.join(", ").into(),
-            status: present::status_text(&status).into(),
+            status: present::repo_display_status(&status, ahead, behind, dirty, has_remote).into(),
             error_msg: present::status_error_short(&status).into(),
-            kind: present::status_kind(&status),
+            kind: present::repo_display_kind(&status, ahead, behind, dirty, has_remote),
             branch: branch.into(),
-            sync_info: present::format_sync(ahead, behind, dirty, stashes).into(),
+            sync_info: present::working_tree_text(dirty, stashes).into(),
+            sync_kind: present::working_tree_kind(dirty),
             last_commit: present::format_commit_date(*last_c, now_t).into(),
             commits: if commits > 0 { commits.to_string().into() } else { "–".into() },
             files: if files > 0 { files.to_string().into() } else { "–".into() },
             size: present::format_size_kb(size_kb).into(),
+            size_kind: present::size_kind(size_kb),
             build_size: build_size.into(),
+            build_kind: present::build_size_kind(build_bytes),
             locations: st.shared.locations_of(&r.id).count() as i32,
             favorite: r.favorite,
             has_drift,
         });
     }
     ui.set_repos(ModelRc::new(VecModel::from(rows)));
+
+    // Finde das aktivste Repo mit uncommitteten Änderungen für den Quick-Commit Button
+    let mut dirty_repos = 0;
+    let mut top_dirty_repo: Option<(String, String, u32)> = None;
+    for r in &st.shared.repos {
+        for l in st.shared.locations_of(&r.id) {
+            if let Resolved::Local(p) = resolved(st, l) {
+                if let Some(s) = st.snaps.get(&l.id) {
+                    let dirty = s.dirty_files + s.untracked;
+                    if dirty > 0 {
+                        dirty_repos += 1;
+                        let desc = format!("{} ({}) – {} uncommittete Datei(en)", r.name, p.display(), dirty);
+                        if top_dirty_repo.as_ref().map(|(_, _, d)| dirty > *d).unwrap_or(true) {
+                            top_dirty_repo = Some((l.id.clone(), desc, dirty));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    ui.set_dirty_repos_count(dirty_repos);
+    if let Some((loc_id, desc, _)) = top_dirty_repo {
+        ui.set_quick_commit_target_id(loc_id.into());
+        ui.set_quick_commit_target_desc(desc.into());
+    } else if let Some(r) = st.shared.repos.iter().find(|r| r.id == st.selected) {
+        let loc = st.shared.locations_of(&r.id).find_map(|l| match resolved(st, l) {
+            Resolved::Local(p) => Some((l.id.clone(), format!("{} ({})", r.name, p.display()))),
+            _ => None,
+        });
+        if let Some((loc_id, desc)) = loc {
+            ui.set_quick_commit_target_id(loc_id.into());
+            ui.set_quick_commit_target_desc(desc.into());
+        } else {
+            ui.set_quick_commit_target_id("".into());
+            ui.set_quick_commit_target_desc(r.name.as_str().into());
+        }
+    } else {
+        ui.set_quick_commit_target_id("".into());
+        ui.set_quick_commit_target_desc("Kein aktives Repository".into());
+    }
 
     ui.set_stat_busy(st.stats_busy);
     match st.stats.get(&st.selected) {
@@ -427,6 +470,21 @@ fn apply(ui: &MainWindow, st: &mut State) {
         ui.set_selected_tags(r.tags.join(", ").into());
         ui.set_selected_notes(r.notes.as_str().into());
         ui.set_selected_favorite(r.favorite);
+
+        let is_offline = st.shared.locations_of(&r.id).all(|l| {
+            match resolved(st, l) {
+                Resolved::OtherOs => true,
+                Resolved::Local(_) => st.snaps.get(&l.id).map(|s| matches!(s.state, Status::Unavailable)).unwrap_or(true),
+            }
+        });
+        ui.set_selected_is_offline(is_offline);
+
+        let clone_dest = suggest_clone_dest(st, &r.id);
+        ui.set_selected_suggested_dest(clone_dest.into());
+
+        let mut best_dirty_loc: Option<(String, String, u32)> = None;
+        let mut best_ahead_loc: Option<(String, String, u32)> = None;
+
         let t = now();
         for l in st.shared.locations_of(&r.id) {
             let (path, other_os) = match resolved(st, l) {
@@ -437,13 +495,43 @@ fn apply(ui: &MainWindow, st: &mut State) {
                 }
             };
             let snap = st.snaps.get(&l.id);
+            let ahead = snap.map(|s| s.ahead).unwrap_or(0);
+            let behind = snap.map(|s| s.behind).unwrap_or(0);
+            let dirty = snap.map(|s| s.dirty_files + s.untracked).unwrap_or(0);
+            let stashes = snap.map(|s| s.stash_count).unwrap_or(0);
+            let has_remote = snap.and_then(|s| s.remote_url.as_ref()).map(|u| !u.is_empty()).unwrap_or(!r.remote_url.is_empty());
             let state = if other_os { Status::Unavailable } else { snap.map(|s| s.state.clone()).unwrap_or(Status::Unavailable) };
             let can_pull = !other_os && guard_pull(&state).is_ok();
-            let can_push = !other_os && guard_push(&state).is_ok() && snap.map(|s| s.ahead > 0).unwrap_or(false);
-            let can_commit = !other_os && snap.map(|s| s.dirty_files + s.untracked > 0).unwrap_or(false);
+            let can_push = !other_os && guard_push(&state).is_ok() && ahead > 0;
+            let can_commit = !other_os && dirty > 0;
             let b_bytes = snap.map(|s| s.build_size_bytes).unwrap_or(0);
             let can_clean = !other_os && b_bytes > 0;
             let b_size = repoorganizer_core::clean::format_bytes(b_bytes);
+            let (rel_text, rel_kind) = if other_os {
+                ("⭘ Anderes OS".to_string(), 4)
+            } else if matches!(state, Status::Unavailable) {
+                ("⭘ Offline".to_string(), 4)
+            } else if matches!(state, Status::Error(_)) {
+                ("⚠ Fehler".to_string(), 3)
+            } else {
+                present::remote_relation_badge(ahead, behind, has_remote)
+            };
+
+            if !other_os {
+                let lbl = if l.label.is_empty() { l.id.clone() } else { l.label.clone() };
+                let display_name = format!("{lbl} ({path})");
+                if dirty > 0 {
+                    if best_dirty_loc.as_ref().map(|(_, _, d)| dirty > *d).unwrap_or(true) {
+                        best_dirty_loc = Some((l.id.clone(), display_name.clone(), dirty));
+                    }
+                }
+                if ahead > 0 {
+                    if best_ahead_loc.as_ref().map(|(_, _, a)| ahead > *a).unwrap_or(true) {
+                        best_ahead_loc = Some((l.id.clone(), display_name, ahead));
+                    }
+                }
+            }
+
             locs.push(LocationRow {
                 id: l.id.as_str().into(),
                 can_pull,
@@ -454,26 +542,151 @@ fn apply(ui: &MainWindow, st: &mut State) {
                 label: if l.label.is_empty() { l.id.as_str().into() } else { l.label.as_str().into() },
                 path: path.into(),
                 role: format!("{:?}", l.role).to_lowercase().into(),
-                status: present::status_text(&state).into(),
+                status: rel_text.into(),
                 error_msg: present::status_error(&state).into(),
-                kind: present::status_kind(&state),
+                kind: rel_kind,
                 branch: snap.and_then(|s| s.branch.clone()).unwrap_or_default().into(),
-                ahead: snap.map(|s| s.ahead as i32).unwrap_or(0),
-                behind: snap.map(|s| s.behind as i32).unwrap_or(0),
-                dirty: snap.map(|s| (s.dirty_files + s.untracked) as i32).unwrap_or(0),
-                stashes: snap.map(|s| s.stash_count as i32).unwrap_or(0),
+                ahead: ahead as i32,
+                behind: behind as i32,
+                dirty: dirty as i32,
+                stashes: stashes as i32,
+                working_tree: present::working_tree_text(dirty, stashes).into(),
+                working_tree_kind: present::working_tree_kind(dirty),
                 fetched: present::ago(snap.and_then(|s| s.last_fetch), t).into(),
                 pulled: present::ago(snap.and_then(|s| s.last_pull), t).into(),
                 other_os,
             });
         }
+
+        if let Some((loc_id, name, dirty_count)) = best_dirty_loc {
+            ui.set_selected_active_loc_id(loc_id.into());
+            ui.set_selected_active_loc_name(name.into());
+            ui.set_selected_dirty_count(dirty_count as i32);
+            ui.set_selected_ahead_count(0);
+        } else if let Some((loc_id, name, ahead_count)) = best_ahead_loc {
+            ui.set_selected_active_loc_id(loc_id.into());
+            ui.set_selected_active_loc_name(name.into());
+            ui.set_selected_dirty_count(0);
+            ui.set_selected_ahead_count(ahead_count as i32);
+        } else {
+            ui.set_selected_active_loc_id("".into());
+            ui.set_selected_active_loc_name("".into());
+            ui.set_selected_dirty_count(0);
+            ui.set_selected_ahead_count(0);
+        }
+
+        // Fehlende Basispfade für das ausgewählte Repo ermitteln
+        let bp = &st.shared.base_paths;
+        let mut missing_bp_rows = Vec::new();
+
+        // 1. Shared Unix (z. B. /r/git)
+        if let Some(shared_u) = &bp.shared_unix {
+            let su = shared_u.trim();
+            if !su.is_empty() && st.os != Os::Windows {
+                let target_path = format!("{su}/{}", r.name);
+                let has_location = st.shared.locations_of(&r.id).any(|l| {
+                    match resolved(st, l) {
+                        Resolved::Local(p) => p == std::path::Path::new(&target_path),
+                        _ => l.paths.linux.as_deref() == Some(&target_path),
+                    }
+                });
+                if !has_location {
+                    missing_bp_rows.push(MissingBasePathRow {
+                        label: format!("In RAM-Disk ({su})").into(),
+                        target_path: target_path.into(),
+                        base_kind: "shared_unix".into(),
+                    });
+                }
+            }
+        }
+
+        // 2. Local Linux (z. B. /home/tristan/Projekte)
+        if let Some(local_l) = &bp.local_linux {
+            let ll = local_l.trim();
+            if !ll.is_empty() && st.os == Os::Linux {
+                let target_path = format!("{ll}/{}", r.name);
+                let has_location = st.shared.locations_of(&r.id).any(|l| {
+                    match resolved(st, l) {
+                        Resolved::Local(p) => p == std::path::Path::new(&target_path),
+                        _ => l.paths.linux.as_deref() == Some(&target_path),
+                    }
+                });
+                if !has_location {
+                    let display_base = if let Ok(home) = std::env::var("HOME") {
+                        if ll.starts_with(&home) {
+                            format!("~{}", &ll[home.len()..])
+                        } else {
+                            ll.to_string()
+                        }
+                    } else {
+                        ll.to_string()
+                    };
+                    missing_bp_rows.push(MissingBasePathRow {
+                        label: format!("In Lokale SSD ({display_base})").into(),
+                        target_path: target_path.into(),
+                        base_kind: "local_linux".into(),
+                    });
+                }
+            }
+        }
+
+        // 3. Shared Windows (z. B. R:\git) – Ignoriert wenn leer oder nicht Windows
+        if let Some(shared_w) = &bp.shared_windows {
+            let sw = shared_w.trim();
+            if !sw.is_empty() && st.os == Os::Windows {
+                let target_path = format!(r"{sw}\{}", r.name);
+                let has_location = st.shared.locations_of(&r.id).any(|l| {
+                    match resolved(st, l) {
+                        Resolved::Local(p) => p == std::path::Path::new(&target_path),
+                        _ => l.paths.windows.as_deref() == Some(&target_path),
+                    }
+                });
+                if !has_location {
+                    missing_bp_rows.push(MissingBasePathRow {
+                        label: format!("In Windows Geteilt ({sw})").into(),
+                        target_path: target_path.into(),
+                        base_kind: "shared_windows".into(),
+                    });
+                }
+            }
+        }
+
+        // 4. Local Windows – Ignoriert wenn leer oder nicht Windows
+        if let Some(local_w) = &bp.local_windows {
+            let lw = local_w.trim();
+            if !lw.is_empty() && st.os == Os::Windows {
+                let target_path = format!(r"{lw}\{}", r.name);
+                let has_location = st.shared.locations_of(&r.id).any(|l| {
+                    match resolved(st, l) {
+                        Resolved::Local(p) => p == std::path::Path::new(&target_path),
+                        _ => l.paths.windows.as_deref() == Some(&target_path),
+                    }
+                });
+                if !has_location {
+                    missing_bp_rows.push(MissingBasePathRow {
+                        label: format!("In Windows Lokal ({lw})").into(),
+                        target_path: target_path.into(),
+                        base_kind: "local_windows".into(),
+                    });
+                }
+            }
+        }
+
+        ui.set_missing_base_paths(ModelRc::new(VecModel::from(missing_bp_rows)));
     } else {
         ui.set_selected_name("Kein Repository".into());
+        ui.set_selected_active_loc_id("".into());
+        ui.set_selected_active_loc_name("".into());
+        ui.set_selected_dirty_count(0);
+        ui.set_selected_ahead_count(0);
+        ui.set_missing_base_paths(ModelRc::default());
         ui.set_selected_remote("".into());
         ui.set_suggested_remote("".into());
         ui.set_selected_tags("".into());
         ui.set_selected_notes("".into());
         ui.set_selected_favorite(false);
+        ui.set_selected_is_offline(false);
+        ui.set_selected_suggested_dest("".into());
     }
     ui.set_locations(ModelRc::new(VecModel::from(locs)));
     let disk_msg = st.shared.locations.iter()
@@ -511,6 +724,11 @@ fn sync_settings_fields(cfgw: &SettingsWindow, st: &State) {
     cfgw.set_cfg_refresh_secs(st.local.refresh_interval_secs.to_string().into());
     cfgw.set_cfg_timeout_secs(st.local.reach_timeout_secs.to_string().into());
     cfgw.set_cfg_stale_days(st.local.stale_days.to_string().into());
+    let bp = &st.shared.base_paths;
+    cfgw.set_cfg_shared_win(bp.shared_windows.clone().unwrap_or_default().into());
+    cfgw.set_cfg_shared_unix(bp.shared_unix.clone().unwrap_or_default().into());
+    cfgw.set_cfg_local_linux(bp.local_linux.clone().unwrap_or_default().into());
+    cfgw.set_cfg_local_win(bp.local_windows.clone().unwrap_or_default().into());
 }
 
 /// Drift je Repo: lokale Vergleiche zwischen erreichbaren Standorten, Offline-Standorte per letztem Snapshot.
@@ -806,12 +1024,12 @@ fn run_actions(ui: &MainWindow, state: &Shared, jobs: Vec<(String, PathBuf, Stri
                 .map_err(|e| e.to_string())
             })();
             let snap = git.snapshot(&loc_id, &path);
-            let (weak, state) = (weak.clone(), state.clone());
+            let (weak_ui, state_ui, res_ui, snap_ui) = (weak.clone(), state.clone(), result.clone(), snap.clone());
             let _ = slint::invoke_from_event_loop(move || {
-                let Some(ui) = weak.upgrade() else { return };
-                let mut st = state.lock().unwrap();
+                let Some(ui) = weak_ui.upgrade() else { return };
+                let mut st = state_ui.lock().unwrap();
                 if let Some(t) = st.tasks.iter_mut().find(|t| t.id == task_id) {
-                    match &result {
+                    match &res_ui {
                         Ok(o) => {
                             t.state = 1;
                             t.detail = if o.is_empty() { "ok".into() } else { o.clone() };
@@ -822,8 +1040,8 @@ fn run_actions(ui: &MainWindow, state: &Shared, jobs: Vec<(String, PathBuf, Stri
                         }
                     }
                 }
-                if let Some(remote_u) = snap.remote_url.clone() {
-                    if let Some(repo_id) = st.shared.locations.iter().find(|l| l.id == snap.location_id).map(|l| l.repo_id.clone()) {
+                if let Some(remote_u) = snap_ui.remote_url.clone() {
+                    if let Some(repo_id) = st.shared.locations.iter().find(|l| l.id == snap_ui.location_id).map(|l| l.repo_id.clone()) {
                         if let Some(r) = st.shared.repos.iter_mut().find(|r| r.id == repo_id) {
                             if r.remote_url != remote_u {
                                 r.remote_url = remote_u;
@@ -832,9 +1050,107 @@ fn run_actions(ui: &MainWindow, state: &Shared, jobs: Vec<(String, PathBuf, Stri
                         }
                     }
                 }
-                st.snaps.insert(snap.location_id.clone(), snap);
+                st.snaps.insert(snap_ui.location_id.clone(), snap_ui);
                 apply(&ui, &mut st);
             });
+
+            // Wenn Push oder Commit+Push erfolgreich war: automatisch erreichbare Alternativpfade desselben Repos aktualisieren
+            if (kind == "push" || kind == "commit_push") && result.is_ok() {
+                let alt_targets: Vec<(String, PathBuf, String)> = {
+                    let st = state.lock().unwrap();
+                    let repo_id = st.shared.locations.iter().find(|l| l.id == loc_id).map(|l| l.repo_id.clone());
+                    if let Some(rid) = repo_id {
+                        st.shared
+                            .locations_of(&rid)
+                            .filter(|l| l.id != loc_id)
+                            .filter_map(|l| match resolved(&st, l) {
+                                Resolved::Local(p) if p.is_dir() => {
+                                    let label = if l.label.is_empty() { l.id.clone() } else { l.label.clone() };
+                                    Some((l.id.clone(), p, label))
+                                }
+                                _ => None,
+                            })
+                            .collect()
+                    } else {
+                        Vec::new()
+                    }
+                };
+
+                for (alt_id, alt_path, alt_label) in alt_targets {
+                    let pre_snap = git.snapshot(&alt_id, &alt_path);
+                    let dirty = pre_snap.dirty_files + pre_snap.untracked;
+
+                    let alt_task_id = {
+                        let mut st = state.lock().unwrap();
+                        let tid = st.next_task;
+                        st.next_task += 1;
+                        st.tasks.push(TaskEntry {
+                            id: tid,
+                            title: format!("Auto-Sync: {alt_label}"),
+                            state: 0,
+                            detail: "prüfe & aktualisiere Alternativpfad…".into(),
+                        });
+                        if let Some(ui) = weak.upgrade() {
+                            apply(&ui, &mut st);
+                        }
+                        tid
+                    };
+
+                    // Sicherheitscheck: Niemals uncommittete Änderungen des Alternativpfads antasten!
+                    if dirty > 0 {
+                        let (weak_alt, state_alt) = (weak.clone(), state.clone());
+                        let _ = slint::invoke_from_event_loop(move || {
+                            let Some(ui) = weak_alt.upgrade() else { return };
+                            let mut st = state_alt.lock().unwrap();
+                            if let Some(t) = st.tasks.iter_mut().find(|t| t.id == alt_task_id) {
+                                t.state = 2;
+                                t.detail = format!("Sicherheitsstopp: {dirty} uncommittete Datei(en) vorhanden – kein Überschreiben");
+                            }
+                            st.snaps.insert(alt_id, pre_snap);
+                            apply(&ui, &mut st);
+                        });
+                        continue;
+                    }
+
+                    // Sicherheitscheck: Niemals pullen, wenn der Alternativpfad eigene ungesendete Commits hat (Divergenzschutz)!
+                    if pre_snap.ahead > 0 {
+                        let (weak_alt, state_alt) = (weak.clone(), state.clone());
+                        let _ = slint::invoke_from_event_loop(move || {
+                            let Some(ui) = weak_alt.upgrade() else { return };
+                            let mut st = state_alt.lock().unwrap();
+                            if let Some(t) = st.tasks.iter_mut().find(|t| t.id == alt_task_id) {
+                                t.state = 2;
+                                t.detail = "Sicherheitsstopp: Eigene ungesendete Commits vorhanden (Divergenzschutz)".into();
+                            }
+                            st.snaps.insert(alt_id, pre_snap);
+                            apply(&ui, &mut st);
+                        });
+                        continue;
+                    }
+
+                    let pull_res = git.fetch(&alt_path).and_then(|_| git.pull(&alt_path, PullMode::FfOnly));
+                    let alt_snap = git.snapshot(&alt_id, &alt_path);
+                    let (weak_alt, state_alt) = (weak.clone(), state.clone());
+                    let _ = slint::invoke_from_event_loop(move || {
+                        let Some(ui) = weak_alt.upgrade() else { return };
+                        let mut st = state_alt.lock().unwrap();
+                        if let Some(t) = st.tasks.iter_mut().find(|t| t.id == alt_task_id) {
+                            match &pull_res {
+                                Ok(out) => {
+                                    t.state = 1;
+                                    t.detail = if out.trim().is_empty() { "Bereits aktuell".into() } else { out.trim().to_string() };
+                                }
+                                Err(e) => {
+                                    t.state = 2;
+                                    t.detail = format!("Hinweis: {e}");
+                                }
+                            }
+                        }
+                        st.snaps.insert(alt_id, alt_snap);
+                        apply(&ui, &mut st);
+                    });
+                }
+            }
         }
     });
 }
@@ -979,6 +1295,62 @@ fn run_clone(ui: &MainWindow, state: &Shared, url: String, dest: String, repo_id
             }
         });
     });
+}
+
+fn suggest_clone_dest(st: &State, repo_id: &str) -> String {
+    let repo = st.shared.repos.iter().find(|r| r.id == repo_id);
+    let repo_name = repo.map(|r| r.name.as_str()).unwrap_or(repo_id);
+
+    // 1. Gibt es einen Standort, dessen Mapping einen lokalen Pfad ergibt?
+    for l in st.shared.locations_of(repo_id) {
+        if let Resolved::Local(p) = resolved(st, l) {
+            return p.display().to_string();
+        }
+    }
+
+    let bp = &st.shared.base_paths;
+
+    // 2. Geteilter Basispfad laut Hauptkonfig
+    if st.os == Os::Windows {
+        if let Some(shared_win) = &bp.shared_windows {
+            if std::path::Path::new(shared_win).exists() {
+                return format!(r"{shared_win}\{repo_name}");
+            }
+        }
+    } else if let Some(shared_unix) = &bp.shared_unix {
+        if std::path::Path::new(shared_unix).exists() {
+            return format!("{shared_unix}/{repo_name}");
+        }
+    }
+
+    // 3. Lokaler Basispfad für aktuelles Betriebssystem laut Hauptkonfig
+    if st.os == Os::Windows {
+        if let Some(local_win) = &bp.local_windows {
+            if std::path::Path::new(local_win).exists() {
+                return format!(r"{local_win}\{repo_name}");
+            }
+        }
+    } else if let Some(local_linux) = &bp.local_linux {
+        if std::path::Path::new(local_linux).exists() {
+            return format!("{local_linux}/{repo_name}");
+        }
+    }
+
+    // 4. Fallbacks (Hardcoded Defaults)
+    if std::path::Path::new("/r/git").exists() {
+        return format!("/r/git/{repo_name}");
+    }
+    if st.os == Os::Windows && std::path::Path::new(r"R:\git").exists() {
+        return format!(r"R:\git\{repo_name}");
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        let projekte = format!("{home}/Projekte");
+        if std::path::Path::new(&projekte).exists() {
+            return format!("{projekte}/{repo_name}");
+        }
+    }
+
+    format!("./{repo_name}")
 }
 
 fn name_from_path(path: &str) -> String {
@@ -1171,7 +1543,10 @@ fn main() -> Result<(), slint::PlatformError> {
                 match resolve(l, os, &shared.mappings) {
                     Resolved::Local(p) => {
                         let s = git.snapshot(&l.id, &p);
-                        println!("  [{}] {} -> {:?} ({})", l.id, p.display(), s.state, present::status_text(&s.state));
+                        let has_remote = s.remote_url.as_ref().map(|u| !u.is_empty()).unwrap_or(false);
+                        let (rel_str, _) = present::remote_relation_badge(s.ahead, s.behind, has_remote);
+                        let tree_str = present::working_tree_text(s.dirty_files + s.untracked, s.stash_count);
+                        println!("  [{}] {} -> {} | {}", l.id, p.display(), rel_str, tree_str);
                     }
                     Resolved::OtherOs => println!("  [{}] (auf anderem System)", l.id),
                 }
@@ -1373,6 +1748,30 @@ fn main() -> Result<(), slint::PlatformError> {
             if let Some(ui) = weak.upgrade() {
                 let jobs = jobs_for(&state.lock().unwrap(), Some(&loc), None);
                 run_actions(&ui, &state, jobs, "commit_push", msg.to_string());
+            }
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_do_quick_commit_push(move |msg: SharedString| {
+            if let Some(ui) = weak.upgrade() {
+                let target_loc = ui.get_quick_commit_target_id().to_string();
+                if !target_loc.is_empty() {
+                    let jobs = jobs_for(&state.lock().unwrap(), Some(&target_loc), None);
+                    run_actions(&ui, &state, jobs, "commit_push", msg.to_string());
+                }
+            }
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_do_quick_commit(move |msg: SharedString| {
+            if let Some(ui) = weak.upgrade() {
+                let target_loc = ui.get_quick_commit_target_id().to_string();
+                if !target_loc.is_empty() {
+                    let jobs = jobs_for(&state.lock().unwrap(), Some(&target_loc), None);
+                    run_actions(&ui, &state, jobs, "commit", msg.to_string());
+                }
             }
         });
     }
@@ -1591,6 +1990,112 @@ fn main() -> Result<(), slint::PlatformError> {
     }
     {
         let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_clone_offline_location(move |loc_id: SharedString| {
+            if let Some(ui) = weak.upgrade() {
+                let (repo_id, dest, url) = {
+                    let st = state.lock().unwrap();
+                    let loc = st.shared.locations.iter().find(|l| l.id == loc_id.as_str());
+                    let repo_id = loc.map(|l| l.repo_id.clone()).unwrap_or_default();
+                    let repo = st.shared.repos.iter().find(|r| r.id == repo_id);
+                    let url = repo.map(|r| r.remote_url.clone()).unwrap_or_default();
+                    let dest = loc.and_then(|l| {
+                        match resolved(&st, l) {
+                            Resolved::Local(p) => Some(p.display().to_string()),
+                            Resolved::OtherOs => None,
+                        }
+                    }).unwrap_or_else(|| suggest_clone_dest(&st, &repo_id));
+                    (repo_id, dest, url)
+                };
+                if !url.is_empty() && !dest.is_empty() {
+                    run_clone(&ui, &state, url, dest, Some(repo_id));
+                }
+            }
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_create_in_base_path(move |repo_id: SharedString, target_path: SharedString| {
+            if let Some(ui) = weak.upgrade() {
+                let rid = repo_id.to_string();
+                let dest = target_path.trim().to_string();
+                if rid.is_empty() || dest.is_empty() {
+                    return;
+                }
+                let (url, existing_local) = {
+                    let st = state.lock().unwrap();
+                    let repo = st.shared.repos.iter().find(|r| r.id == rid);
+                    let url = repo.map(|r| r.remote_url.clone()).unwrap_or_default();
+                    let existing_local = st.shared.locations_of(&rid).find_map(|l| match resolved(&st, l) {
+                        Resolved::Local(p) if p.exists() => Some(p.display().to_string()),
+                        _ => None,
+                    });
+                    (url, existing_local)
+                };
+
+                let clone_source = if !url.is_empty() {
+                    url
+                } else if let Some(local_src) = existing_local {
+                    local_src
+                } else {
+                    return;
+                };
+
+                run_clone(&ui, &state, clone_source, dest, Some(rid));
+            }
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_browse_clone_dest(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            crate::ensure_linux_dialog_ready();
+            let start = {
+                let _st = state.lock().unwrap();
+                let cur = ui.get_selected_suggested_dest().to_string();
+                if !cur.is_empty() && std::path::Path::new(&cur).exists() {
+                    PathBuf::from(cur)
+                } else if std::path::Path::new("/r/git").exists() {
+                    PathBuf::from("/r/git")
+                } else {
+                    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+                }
+            };
+            let pick = rfd::FileDialog::new()
+                .set_directory(&start)
+                .set_title("Zielordner zum Klonen auswählen")
+                .pick_folder();
+            if let Some(folder) = pick {
+                ui.set_selected_suggested_dest(folder.to_string_lossy().to_string().into());
+            }
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_browse_new_location(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            crate::ensure_linux_dialog_ready();
+            let start = {
+                let _st = state.lock().unwrap();
+                let cur = ui.get_new_location_path().to_string();
+                if !cur.is_empty() && std::path::Path::new(&cur).exists() {
+                    PathBuf::from(cur)
+                } else if std::path::Path::new("/r/git").exists() {
+                    PathBuf::from("/r/git")
+                } else {
+                    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+                }
+            };
+            let pick = rfd::FileDialog::new()
+                .set_directory(&start)
+                .set_title("Standort-Ordner auswählen")
+                .pick_folder();
+            if let Some(folder) = pick {
+                ui.set_new_location_path(folder.to_string_lossy().to_string().into());
+            }
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
         ui.on_link_location(move |repo: SharedString, path: SharedString| {
             if let Some(ui) = weak.upgrade() {
                 {
@@ -1757,7 +2262,7 @@ fn main() -> Result<(), slint::PlatformError> {
     }
     {
         let (weak, cfgw, state) = (ui.as_weak(), settings_win.as_weak(), state.clone());
-        settings_win.on_save_settings(move |theme: SharedString, git_user: SharedString, git: SharedString, refr: SharedString, timeout: SharedString, stale: SharedString| {
+        settings_win.on_save_settings(move |theme: SharedString, git_user: SharedString, git: SharedString, refr: SharedString, timeout: SharedString, stale: SharedString, shared_win: SharedString, shared_unix: SharedString, local_linux: SharedString, local_win: SharedString| {
             if let Some(ui) = weak.upgrade() {
                 let mut st = state.lock().unwrap();
                 st.local.theme = theme.trim().to_string();
@@ -1773,13 +2278,47 @@ fn main() -> Result<(), slint::PlatformError> {
                 if let Ok(v) = stale.trim().parse() {
                     st.local.stale_days = v;
                 }
+                let sw = shared_win.trim();
+                st.shared.base_paths.shared_windows = if sw.is_empty() { None } else { Some(sw.to_string()) };
+                let su = shared_unix.trim();
+                st.shared.base_paths.shared_unix = if su.is_empty() { None } else { Some(su.to_string()) };
+                let ll = local_linux.trim();
+                st.shared.base_paths.local_linux = if ll.is_empty() { None } else { Some(ll.to_string()) };
+                let lw = local_win.trim();
+                st.shared.base_paths.local_windows = if lw.is_empty() { None } else { Some(lw.to_string()) };
+
                 save_local(&mut st);
+                save_shared(&mut st);
                 st.task = "Einstellungen gespeichert".into();
                 if let Some(w) = cfgw.upgrade() {
                     sync_settings_fields(&w, &st);
                 }
                 apply(&ui, &mut st);
             }
+        });
+    }
+    {
+        let cfgw = settings_win.as_weak();
+        settings_win.on_browse_base_path(move |field: SharedString| {
+            let handle = cfgw.clone();
+            let target = field.to_string();
+            std::thread::spawn(move || {
+                let dialog = rfd::FileDialog::new().set_title("Basispfad auswählen");
+                if let Some(folder) = dialog.pick_folder() {
+                    let path_str = folder.to_string_lossy().to_string();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(w) = handle.upgrade() {
+                            match target.as_str() {
+                                "shared_unix" => w.set_cfg_shared_unix(path_str.into()),
+                                "shared_win" => w.set_cfg_shared_win(path_str.into()),
+                                "local_linux" => w.set_cfg_local_linux(path_str.into()),
+                                "local_win" => w.set_cfg_local_win(path_str.into()),
+                                _ => {}
+                            }
+                        }
+                    });
+                }
+            });
         });
     }
     {
@@ -1864,6 +2403,13 @@ fn main() -> Result<(), slint::PlatformError> {
 
     {
         let mut st = state.lock().unwrap();
+        if st.selected.is_empty() {
+            if let Some(r) = st.shared.repos.iter().find(|r| r.id == "repoorganizer") {
+                st.selected = r.id.clone();
+            } else if let Some(r) = st.shared.repos.first() {
+                st.selected = r.id.clone();
+            }
+        }
         sync_settings_fields(&settings_win, &st);
         apply(&ui, &mut st);
     }

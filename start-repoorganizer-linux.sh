@@ -2,6 +2,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_NAME="$(basename "$0")"
 cd "$SCRIPT_DIR"
 
 export PATH="/run/wrappers/bin:/run/current-system/sw/bin:$HOME/.nix-profile/bin:$HOME/.cargo/bin:$PATH"
@@ -16,7 +17,7 @@ fi
 
 # Wenn NixOS / nix-shell vorhanden ist und wir noch nicht in nix-shell sind:
 if [ -z "$IN_NIX_SHELL" ] && command -v nix-shell >/dev/null 2>&1 && [ -f "$SCRIPT_DIR/shell.nix" ]; then
-    exec nix-shell "$SCRIPT_DIR/shell.nix" --run "\"$SCRIPT_DIR/start-linux.sh\" $*"
+    exec nix-shell "$SCRIPT_DIR/shell.nix" --run "\"$SCRIPT_DIR/$SCRIPT_NAME\" $*"
 fi
 
 # Für NixOS D-Bus / xdg-desktop-portal Bibliothekspfad bereitstellen

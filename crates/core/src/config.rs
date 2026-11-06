@@ -30,11 +30,32 @@ pub struct SavedView {
     pub older_than_days: Option<u32>,
 }
 
+/// Konfigurierbare Standard-Basispfade (geteilt oder je Betriebssystem).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct BasePaths {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shared_windows: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shared_unix: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_linux: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_windows: Option<String>,
+}
+
+impl BasePaths {
+    pub fn is_empty(&self) -> bool {
+        self.shared_windows.is_none() && self.shared_unix.is_none() && self.local_linux.is_none() && self.local_windows.is_none()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SharedConfig {
     pub version: u32,
     #[serde(default, rename = "mapping", skip_serializing_if = "Vec::is_empty")]
     pub mappings: Vec<PathMapping>,
+    #[serde(default, skip_serializing_if = "BasePaths::is_empty")]
+    pub base_paths: BasePaths,
     #[serde(default, rename = "repo", skip_serializing_if = "Vec::is_empty")]
     pub repos: Vec<Repo>,
     #[serde(default, rename = "location", skip_serializing_if = "Vec::is_empty")]
@@ -45,7 +66,14 @@ pub struct SharedConfig {
 
 impl Default for SharedConfig {
     fn default() -> Self {
-        Self { version: CURRENT_VERSION, mappings: vec![], repos: vec![], locations: vec![], views: vec![] }
+        Self {
+            version: CURRENT_VERSION,
+            mappings: vec![],
+            base_paths: BasePaths::default(),
+            repos: vec![],
+            locations: vec![],
+            views: vec![],
+        }
     }
 }
 
@@ -68,22 +96,13 @@ impl SharedConfig {
     /// Stabiler Pfad im Programmverzeichnis (`repos.toml`).
     pub fn program_dir_path() -> PathBuf {
         if let Ok(cwd) = std::env::current_dir() {
-            if cwd.join("Cargo.toml").exists()
-                || cwd.join("repos.toml").exists()
-                || cwd.join("start-windows.bat").exists()
-                || cwd.join("start-linux.sh").exists()
-                || cwd.join("starter.bat").exists()
-            {
+            if cwd.join("repos.toml").exists() || cwd.join("Cargo.toml").exists() {
                 return cwd.join("repos.toml");
             }
         }
         if let Ok(exe) = std::env::current_exe() {
             for anc in exe.ancestors().skip(1) {
-                if anc.join("Cargo.toml").exists()
-                    || anc.join("start-windows.bat").exists()
-                    || anc.join("start-linux.sh").exists()
-                    || anc.join("starter.bat").exists()
-                {
+                if anc.join("repos.toml").exists() || anc.join("Cargo.toml").exists() {
                     return anc.join("repos.toml");
                 }
             }
