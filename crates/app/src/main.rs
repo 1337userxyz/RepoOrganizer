@@ -1,4 +1,4 @@
-mod present;
+﻿mod present;
 
 use repoorganizer_core::config::{detect_user_from_url, LocalConfig, SharedConfig};
 use repoorganizer_core::model::{Location, OsPaths, Repo, Role, Snapshot, Status};
@@ -113,6 +113,7 @@ fn ctx_for<'a>(st: &'a State, repo: &'a Repo, now: i64) -> RepoCtx<'a> {
         drift: st.drift.get(&repo.id).map(|m| !m.is_empty()).unwrap_or(false),
         offline: snaps.iter().all(|s| offline_state(&s.state)),
         health: st.health.get(&repo.id).map(|v| overall(&v.iter().map(|(_, f)| f.clone()).collect::<Vec<_>>())).unwrap_or(Level::Ok),
+        has_build_artifacts: snaps.iter().any(|s| s.build_size_bytes > 0),
         now,
     }
 }
@@ -286,6 +287,8 @@ fn apply(ui: &MainWindow, st: &mut State) {
             .max(st.stats.get(&r.id).map(|rs| rs.git_size / 1024).unwrap_or(0));
         let has_drift = st.drift.get(&r.id).map(|m| !m.is_empty()).unwrap_or(false);
 
+        let build_bytes: u64 = snaps.iter().map(|s| s.build_size_bytes).sum();
+        let build_size = repoorganizer_core::clean::format_bytes(build_bytes);
         rows.push(RepoRow {
             id: r.id.as_str().into(),
             name: r.name.as_str().into(),
@@ -300,6 +303,7 @@ fn apply(ui: &MainWindow, st: &mut State) {
             commits: if commits > 0 { commits.to_string().into() } else { "–".into() },
             files: if files > 0 { files.to_string().into() } else { "–".into() },
             size: present::format_size_kb(size_kb).into(),
+            build_size: build_size.into(),
             locations: st.shared.locations_of(&r.id).count() as i32,
             favorite: r.favorite,
             has_drift,
@@ -437,11 +441,16 @@ fn apply(ui: &MainWindow, st: &mut State) {
             let can_pull = !other_os && guard_pull(&state).is_ok();
             let can_push = !other_os && guard_push(&state).is_ok() && snap.map(|s| s.ahead > 0).unwrap_or(false);
             let can_commit = !other_os && snap.map(|s| s.dirty_files + s.untracked > 0).unwrap_or(false);
+            let b_bytes = snap.map(|s| s.build_size_bytes).unwrap_or(0);
+            let can_clean = !other_os && b_bytes > 0;
+            let b_size = repoorganizer_core::clean::format_bytes(b_bytes);
             locs.push(LocationRow {
                 id: l.id.as_str().into(),
                 can_pull,
                 can_push,
                 can_commit,
+                can_clean,
+                build_size: b_size.into(),
                 label: if l.label.is_empty() { l.id.as_str().into() } else { l.label.as_str().into() },
                 path: path.into(),
                 role: format!("{:?}", l.role).to_lowercase().into(),
@@ -467,6 +476,21 @@ fn apply(ui: &MainWindow, st: &mut State) {
         ui.set_selected_favorite(false);
     }
     ui.set_locations(ModelRc::new(VecModel::from(locs)));
+    let disk_msg = st.shared.locations.iter()
+        .find_map(|l| match resolved(st, l) {
+            Resolved::Local(p) => {
+                let root_prefix = p.components().next().map(|c| c.as_os_str().to_string_lossy().to_string()).unwrap_or_default();
+                repoorganizer_core::clean::disk_space(&p).map(|(free, total)| {
+                    format!("{root_prefix} {} frei von {}",
+                        repoorganizer_core::clean::format_bytes(free),
+                        repoorganizer_core::clean::format_bytes(total)
+                    )
+                })
+            }
+            _ => None,
+        })
+        .unwrap_or_default();
+    ui.set_disk_info(disk_msg.into());
     if let Some(cfgw) = st.settings_win.as_ref().and_then(|w| w.upgrade()) {
         cfgw.set_cfg_mappings(ModelRc::new(VecModel::from(
             st.shared.mappings.iter().map(|m| MappingRow { windows: m.windows.as_str().into(), unix: m.unix.as_str().into() }).collect::<Vec<_>>(),
@@ -773,6 +797,10 @@ fn run_actions(ui: &MainWindow, state: &Shared, jobs: Vec<(String, PathBuf, Stri
                     "set_remote_push" => git.set_remote_and_push(&path, &msg),
                     "publish_gh_priv" => git.publish_github(&path, &msg, true),
                     "publish_gh_pub" => git.publish_github(&path, &msg, false),
+                    "clean" => {
+                        let freed = repoorganizer_core::clean::clean_repo_artifacts(&path).map_err(|e| e.to_string())?;
+                        Ok(format!("{} freigegeben", repoorganizer_core::clean::format_bytes(freed)))
+                    },
                     other => Ok(format!("unbekannte Aktion {other}")),
                 }
                 .map_err(|e| e.to_string())
@@ -1266,6 +1294,24 @@ fn main() -> Result<(), slint::PlatformError> {
             if let Some(ui) = weak.upgrade() {
                 let jobs = jobs_for(&state.lock().unwrap(), Some(&loc), None);
                 run_actions(&ui, &state, jobs, &kind, String::new());
+            }
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_clean_repo_builds(move |repo_id: SharedString| {
+            if let Some(ui) = weak.upgrade() {
+                let jobs = jobs_for(&state.lock().unwrap(), None, Some(&repo_id));
+                run_actions(&ui, &state, jobs, "clean", String::new());
+            }
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_clean_all_builds(move || {
+            if let Some(ui) = weak.upgrade() {
+                let jobs = jobs_for(&state.lock().unwrap(), None, None);
+                run_actions(&ui, &state, jobs, "clean", String::new());
             }
         });
     }

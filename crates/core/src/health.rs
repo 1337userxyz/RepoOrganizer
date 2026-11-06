@@ -12,6 +12,7 @@ pub const ALL_CHECKS: &[(&str, &str)] = &[
     ("old_dirty", "Alte uncommittete Änderungen"),
     ("large_files", "Große Dateien"),
     ("git_size", ".git-Größe"),
+    ("build_artifacts", "Große Build-Artefakte"),
     ("no_gitignore", "Fehlende .gitignore"),
     ("no_readme", "Fehlende README"),
     ("detached", "Detached HEAD"),
@@ -31,11 +32,21 @@ pub struct HealthSettings {
     pub dirty_days: u32,
     pub large_file_mb: u64,
     pub git_size_mb: u64,
+    pub build_artifacts_mb: u64,
 }
 
 impl Default for HealthSettings {
     fn default() -> Self {
-        Self { disabled: vec![], stale_fetch_days: 14, stale_pull_days: 30, stale_commit_days: 90, dirty_days: 7, large_file_mb: 50, git_size_mb: 1000 }
+        Self {
+            disabled: vec![],
+            stale_fetch_days: 14,
+            stale_pull_days: 30,
+            stale_commit_days: 90,
+            dirty_days: 7,
+            large_file_mb: 50,
+            git_size_mb: 1000,
+            build_artifacts_mb: 500,
+        }
     }
 }
 
@@ -60,6 +71,8 @@ pub struct Facts {
     pub oldest_dirty: Option<i64>,
     pub large_files: Vec<(String, u64)>,
     pub git_size_bytes: u64,
+    pub build_size_bytes: u64,
+    pub build_artifacts_count: u32,
     pub has_gitignore: bool,
     pub has_readme: bool,
     pub in_progress: Option<String>,
@@ -122,6 +135,15 @@ pub fn evaluate(f: &Facts, s: &HealthSettings, now: i64) -> Vec<Finding> {
     }
     if f.git_size_bytes > s.git_size_mb * 1024 * 1024 {
         add("git_size", Level::Warn, format!(".git ist {} MB groß", f.git_size_bytes / 1024 / 1024), "`git gc --aggressive` oder Historie bereinigen.");
+    }
+    let build_limit = s.build_artifacts_mb * 1024 * 1024;
+    if f.build_size_bytes > build_limit {
+        add(
+            "build_artifacts",
+            Level::Warn,
+            format!("Build-Artefakte belegen {}", crate::clean::format_bytes(f.build_size_bytes)),
+            "Build-Cache bereinigen (Button 'Clean'), um RAM freizugeben.",
+        );
     }
     if !f.has_gitignore {
         add("no_gitignore", Level::Warn, ".gitignore fehlt".into(), "Eine .gitignore anlegen.");

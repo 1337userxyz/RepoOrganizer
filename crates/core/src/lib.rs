@@ -1,5 +1,6 @@
 //! RepoOrganizer Core: UI-freie, testbare Logik.
 pub mod cache;
+pub mod clean;
 pub mod config;
 pub mod drift;
 pub mod health;
@@ -14,6 +15,3 @@ pub mod views;
 
 #[cfg(test)]
 mod tests;
-
-
-

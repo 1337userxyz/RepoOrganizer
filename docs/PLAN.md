@@ -130,3 +130,4 @@ Offline-Queue/Hotplug-Sync · „Öffnen mit …" (Explorer/Terminal/VS Code) ·
 | UI-Style | Slint `fluent` |
 | Name | RepoOrganizer |
 | v1-Features | Scan, Drift, Health, Smarte Ansichten, teilbare Config |
+| Build-Cleanup | Automatische Erkennung & Bereinigung von Build-Artefakten (`target`, `bin`/`obj`, `node_modules`, `build` etc.) mit RAM-Disk-Freispeicher-Überwachung |

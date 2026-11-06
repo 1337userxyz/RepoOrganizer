@@ -58,6 +58,8 @@ export struct LocationRow {
     can-pull: bool,
     can-push: bool,
     can-commit: bool,
+    can-clean: bool,
+    build-size: string,
     label: string,
     path: string,
     role: string,
@@ -88,6 +90,7 @@ export struct RepoRow {
     commits: string,
     files: string,
     size: string,
+    build-size: string,
     locations: int,
     favorite: bool,
     has-drift: bool,
@@ -496,6 +499,9 @@ export component MainWindow inherits Window {
     callback toggle-favorite(string);
     callback save-repo-meta(string, string, string, string);
     callback delete-repo(string);
+    callback clean-repo-builds(string);
+    callback clean-all-builds();
+    in-out property <string> disk-info: "";
 
     property <bool> adding: false;
     property <bool> has-col-filter: root.col-repo-filter != 0 || root.col-status-filter != 0 || root.col-sync-filter != 0 || root.col-commit-filter >= 2 || root.col-remote-filter != 0 || (root.col-branch-filter != "" && root.col-branch-filter != "Branch: Alle");
@@ -511,6 +517,8 @@ export component MainWindow inherits Window {
                 Text { text: "RepoOrganizer"; font-size: 18px; font-weight: 700; }
                 Button { text: "Scan-Assistent…"; clicked => { root.open-scan(); } }
                 Button { text: "Einstellungen…"; clicked => { root.open-settings(); } }
+                Button { text: "🧹 Alle Builds leeren"; clicked => { root.clean-all-builds(); } }
+                if root.disk-info != "": Text { text: root.disk-info; font-size: 11px; opacity: 0.75; wrap: word-wrap; }
                 Text { text: "Ansichten"; font-weight: 600; font-size: 12px; opacity: 0.8; }
                 ListView {
                     vertical-stretch: 1;
@@ -689,7 +697,7 @@ export component MainWindow inherits Window {
                                 ColSep {}
                                 Text { text: "Dateien"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 62px; horizontal-alignment: right; vertical-alignment: center; }
                                 ColSep {}
-                                Text { text: "Größe"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 70px; horizontal-alignment: right; vertical-alignment: center; }
+                                Text { text: "Git / Build"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 120px; horizontal-alignment: right; vertical-alignment: center; }
                                 ColSep {}
                                 Text { text: "Orte"; font-size: 11px; font-weight: 700; opacity: 0.85; width: 36px; horizontal-alignment: center; vertical-alignment: center; }
                                 ColSep {}
@@ -817,11 +825,11 @@ export component MainWindow inherits Window {
                                     }
                                     ColSep {}
 
-                                    // 8. Größe (.git)
+                                    // 8. Größe (.git / Build)
                                     Text {
-                                        text: repo.size;
-                                        font-size: 12px;
-                                        width: 70px;
+                                        text: repo.build-size != "-" && repo.build-size != "–" ? (repo.size + " / " + repo.build-size) : repo.size;
+                                        font-size: 11px;
+                                        width: 120px;
                                         horizontal-alignment: right;
                                         vertical-alignment: center;
                                     }
@@ -1012,12 +1020,13 @@ export component MainWindow inherits Window {
                                                 font-size: 12px;
                                                 vertical-alignment: center;
                                             }
-                                            Text { text: "Fetch: " + loc.fetched + " · Pull: " + loc.pulled; font-size: 11px; opacity: 0.65; vertical-alignment: center; }
+                                            Text { text: "Fetch: " + loc.fetched + " · Pull: " + loc.pulled + (loc.build-size != "-" && loc.build-size != "–" ? " · Build: " + loc.build-size : ""); font-size: 11px; opacity: 0.65; vertical-alignment: center; }
                                             Button { text: "Fetch"; enabled: !loc.other-os && loc.kind != 4 && root.selected-remote != ""; clicked => { root.location-action(loc.id, "fetch"); } }
                                             Button { text: "Pull"; enabled: loc.can-pull && root.selected-remote != ""; clicked => { root.location-action(loc.id, "pull"); } }
                                             Button { text: "Push"; enabled: loc.can-push && root.selected-remote != ""; clicked => { root.location-action(loc.id, "push"); } }
                                             Button { text: "Stash"; enabled: loc.can-commit; clicked => { root.location-action(loc.id, "stash"); } }
                                             if loc.stashes > 0: Button { text: "Pop (" + loc.stashes + ")"; clicked => { root.location-action(loc.id, "stash_pop"); } }
+                                            if loc.can-clean: Button { text: "Clean (" + loc.build-size + ")"; clicked => { root.location-action(loc.id, "clean"); } }
                                             Button { text: "Explorer"; enabled: !loc.other-os; clicked => { root.open-in(loc.id, "explorer"); } }
                                             Button { text: "Terminal"; enabled: !loc.other-os; clicked => { root.open-in(loc.id, "terminal"); } }
                                             Button { text: "VS Code"; enabled: !loc.other-os; clicked => { root.open-in(loc.id, "code"); } }
@@ -1077,6 +1086,7 @@ export component MainWindow inherits Window {
                                 clicked => { root.clone-location(root.selected-id, newloc-edit.text); newloc-edit.text = ""; }
                             }
                             Button { text: "Alle Standorte fetchen"; enabled: root.selected-remote != ""; clicked => { root.fetch-all(root.selected-id); } }
+                            Button { text: "Repo bereinigen"; clicked => { root.clean-repo-builds(root.selected-id); } }
                         }
                     }
 

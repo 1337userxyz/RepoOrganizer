@@ -39,7 +39,7 @@ impl CliGit {
     }
 
     fn run(&self, repo: &Path, args: &[&str]) -> Result<String, GitError> {
-        let out = Command::new(&self.git_path).arg("-C").arg(repo).args(args).output()?;
+        let out = Command::new(&self.git_path).args(["-c", "safe.directory=*"]).arg("-C").arg(repo).args(args).output()?;
         if out.status.success() {
             Ok(String::from_utf8_lossy(&out.stdout).into_owned())
         } else {
@@ -329,13 +329,13 @@ impl CliGit {
     }
 
     pub fn clone_repo(&self, url: &str, dest: &Path) -> Result<String, GitError> {
-        let out = Command::new(&self.git_path).arg("clone").arg(url).arg(dest).output()?;
+        let out = Command::new(&self.git_path).args(["-c", "safe.directory=*"]).arg("clone").arg(url).arg(dest).output()?;
         combine(out, "clone")
     }
 
     /// Wie `run`, liefert aber stdout+stderr (git schreibt Fortschritt nach stderr).
     fn run_all(&self, repo: &Path, args: &[&str]) -> Result<String, GitError> {
-        let out = Command::new(&self.git_path).arg("-C").arg(repo).args(args).output()?;
+        let out = Command::new(&self.git_path).args(["-c", "safe.directory=*"]).arg("-C").arg(repo).args(args).output()?;
         combine(out, &args.join(" "))
     }
 }
@@ -374,6 +374,7 @@ impl GitBackend for CliGit {
             commit_count: 0,
             file_count: 0,
             size_kb: 0,
+            build_size_bytes: 0,
             remote_url: None,
             branch: None,
             ahead: 0,
@@ -387,6 +388,10 @@ impl GitBackend for CliGit {
         if !repo.is_dir() {
             return snap;
         }
+
+        // Build-Artefakt-Größe immer ermitteln (auch wenn Git-Status scheitert oder Fehler hat):
+        snap.build_size_bytes = repoorganizer_core::clean::find_artifacts(repo).total_bytes;
+
         if !repo.join(".git").exists() {
             snap.state = Status::NotARepo;
             return snap;
@@ -444,7 +449,3 @@ pub fn snapshots_parallel(git: &dyn GitBackend, items: &[(String, PathBuf)], job
 
 #[cfg(test)]
 mod tests;
-
-
-
-

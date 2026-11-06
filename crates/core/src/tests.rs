@@ -155,7 +155,7 @@ mod m6 {
     }
 
     fn ctx<'a>(r: &'a Repo, statuses: Vec<Status>) -> RepoCtx<'a> {
-        RepoCtx { repo: r, statuses, last_sync: Some(0), last_commit: None, drift: false, offline: false, health: Level::Ok, now: 100 * 86400 }
+        RepoCtx { repo: r, statuses, last_sync: Some(0), last_commit: None, drift: false, offline: false, health: Level::Ok, has_build_artifacts: false, now: 100 * 86400 }
     }
 
     #[test]

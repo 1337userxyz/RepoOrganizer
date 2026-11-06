@@ -116,6 +116,9 @@ impl CliGit {
         if let Ok(dir) = self.run(repo, &["rev-parse", "--absolute-git-dir"]) {
             f.git_size_bytes = dir_size(Path::new(dir.trim()));
         }
+        let arts = repoorganizer_core::clean::find_artifacts(repo);
+        f.build_size_bytes = arts.total_bytes;
+        f.build_artifacts_count = arts.items.len() as u32;
         if let Ok(rd) = std::fs::read_dir(repo) {
             for e in rd.flatten() {
                 let n = e.file_name().to_string_lossy().to_lowercase();
@@ -151,5 +154,3 @@ impl CliGit {
         f
     }
 }
-
-

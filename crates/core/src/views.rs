@@ -14,6 +14,7 @@ pub const BUILTIN: &[(&str, &str)] = &[
     ("offline", "Offline"),
     ("favorite", "Favoriten"),
     ("health", "Health-Warnungen"),
+    ("build", "Build-Daten"),
 ];
 
 pub struct RepoCtx<'a> {
@@ -25,6 +26,7 @@ pub struct RepoCtx<'a> {
     pub drift: bool,
     pub offline: bool,
     pub health: Level,
+    pub has_build_artifacts: bool,
     pub now: i64,
 }
 
@@ -41,6 +43,7 @@ pub fn keyword_matches(kw: &str, c: &RepoCtx, stale_days: u32) -> bool {
         "online" => !c.offline,
         "favorite" => c.repo.favorite,
         "health" => c.health >= Level::Warn,
+        "build" => c.has_build_artifacts,
         _ => false,
     }
 }
