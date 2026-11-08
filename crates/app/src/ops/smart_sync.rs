@@ -36,10 +36,16 @@ pub fn run_smart_sync(
 
         // 1. Commit & Push
         if do_commit_push {
-            let targets: Vec<(String, PathBuf, String, bool, bool)> = {
+            let (targets, skipped_targets): (
+                Vec<(String, String, PathBuf, String, bool, bool)>,
+                Vec<(String, String, String)>,
+            ) = {
                 let st = state_clone.lock().unwrap();
                 let mut list = Vec::new();
+                let mut skipped = Vec::new();
+
                 for r in &st.shared.repos {
+                    let mut candidates = Vec::new();
                     for l in st.shared.locations_of(&r.id) {
                         if let Resolved::Local(p) = resolved(&st, l) {
                             if p.is_dir() {
@@ -48,16 +54,52 @@ pub fn run_smart_sync(
                                 let ahead = snap.map(|s| s.ahead > 0).unwrap_or(false);
                                 if dirty || ahead {
                                     let label = if l.label.is_empty() { r.name.clone() } else { format!("{} ({})", r.name, l.label) };
-                                    list.push((l.id.clone(), p, label, dirty, ahead));
+                                    let is_primary = matches!(l.role, repoorganizer_core::model::Role::Primary);
+                                    candidates.push((r.id.clone(), l.id.clone(), p, label, dirty, ahead, is_primary));
                                 }
                             }
                         }
                     }
+
+                    if candidates.is_empty() {
+                        continue;
+                    }
+
+                    // Falls mehrere Standorte desselben Repos Änderungen haben:
+                    // Primären Standort bevorzugen! Niemals zwei Standorte desselben Repos
+                    // im selben Sync-Lauf pushen, da der zweite Push garantiert divergiert/abgelehnt wird.
+                    candidates.sort_by(|a, b| b.6.cmp(&a.6));
+
+                    let chosen = candidates.remove(0);
+                    let chosen_label = chosen.3.clone();
+                    list.push((chosen.0, chosen.1, chosen.2, chosen.3, chosen.4, chosen.5));
+
+                    for (_, skip_loc_id, _, skip_label, _, _, _) in candidates {
+                        skipped.push((skip_loc_id, skip_label, chosen_label.clone()));
+                    }
                 }
-                list
+                (list, skipped)
             };
 
-            for (loc_id, path, label, dirty, _ahead) in targets {
+            // Hinweise für übersprungene Alternativstandorte direkt ausgeben:
+            for (_loc_id, label, primary_label) in skipped_targets {
+                let (w, s, l_text, p_text) = (weak.clone(), state_clone.clone(), label, primary_label);
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(ui) = w.upgrade() else { return };
+                    let mut st = s.lock().unwrap();
+                    let id = st.next_task;
+                    st.next_task += 1;
+                    st.tasks.push(TaskEntry {
+                        id,
+                        title: format!("Übersprungen: {l_text}"),
+                        state: 2, // Hinweis / Warnung
+                        detail: format!("Kollisionsschutz: Änderungen wurden bereits über '{p_text}' gepusht. Bitte diesen Pfad manuell prüfen."),
+                    });
+                    apply(&ui, &mut st);
+                });
+            }
+
+            for (repo_id, loc_id, path, label, dirty, _ahead) in targets {
                 let kind = if dirty { "commit & push" } else { "push" };
                 let task_id = {
                     let mut st = state_clone.lock().unwrap();
@@ -111,22 +153,17 @@ pub fn run_smart_sync(
                 if res_ok && do_auto_sync {
                     let alt_targets: Vec<(String, PathBuf, String)> = {
                         let st = state_clone.lock().unwrap();
-                        let repo_id = st.shared.locations.iter().find(|l| l.id == loc_id).map(|l| l.repo_id.clone());
-                        if let Some(rid) = repo_id {
-                            st.shared
-                                .locations_of(&rid)
-                                .filter(|l| l.id != loc_id)
-                                .filter_map(|l| match resolved(&st, l) {
-                                    Resolved::Local(p) if p.is_dir() => {
-                                        let label = if l.label.is_empty() { l.id.clone() } else { l.label.clone() };
-                                        Some((l.id.clone(), p, label))
-                                    }
-                                    _ => None,
-                                })
-                                .collect()
-                        } else {
-                            Vec::new()
-                        }
+                        st.shared
+                            .locations_of(&repo_id)
+                            .filter(|l| l.id != loc_id)
+                            .filter_map(|l| match resolved(&st, l) {
+                                Resolved::Local(p) if p.is_dir() => {
+                                    let label = if l.label.is_empty() { l.id.clone() } else { l.label.clone() };
+                                    Some((l.id.clone(), p, label))
+                                }
+                                _ => None,
+                            })
+                            .collect()
                     };
 
                     for (alt_id, alt_path, alt_label) in alt_targets {
