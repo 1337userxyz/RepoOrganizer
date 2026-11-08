@@ -44,6 +44,11 @@ name = "RepoOrganizer"
 remote_url = "https://github.com/1337userxyz/RepoOrganizer.git"
 
 [[repo]]
+id = "slint-desktop-kit"
+name = "slint-desktop-kit"
+remote_url = "https://github.com/1337userxyz/slint-desktop-kit.git"
+
+[[repo]]
 id = "star-trek-skills"
 name = "star-trek-skills"
 remote_url = "/home/tristan/Projekte/star-trek-skills"
@@ -52,11 +57,6 @@ remote_url = "/home/tristan/Projekte/star-trek-skills"
 id = "startrekcomputer"
 name = "StarTrekComputer"
 remote_url = "https://github.com/1337userxyz/StarTrekComputer.git"
-
-[[repo]]
-id = "slint-desktop-kit"
-name = "slint-desktop-kit"
-remote_url = "https://github.com/1337userxyz/slint-desktop-kit.git"
 
 [[location]]
 id = "configurable-csv-analyzer-rust-1"
@@ -194,6 +194,17 @@ role = "backup"
 linux = "/home/tristan/Projekte/RepoOrganizer"
 
 [[location]]
+id = "slint-desktop-kit-1"
+repo_id = "slint-desktop-kit"
+label = "slint-desktop-kit"
+role = "primary"
+
+[location.paths]
+windows = 'R:\git\slint-desktop-kit'
+linux = "/r/git/slint-desktop-kit"
+macos = "/r/git/slint-desktop-kit"
+
+[[location]]
 id = "star-trek-skills-1"
 repo_id = "star-trek-skills"
 label = "star-trek-skills"
@@ -230,14 +241,3 @@ role = "backup"
 
 [location.paths]
 linux = "/home/tristan/Projekte/StarTrekComputer"
-
-[[location]]
-id = "slint-desktop-kit-1"
-repo_id = "slint-desktop-kit"
-label = "slint-desktop-kit"
-role = "primary"
-
-[location.paths]
-windows = 'R:\git\slint-desktop-kit'
-linux = "/r/git/slint-desktop-kit"
-macos = "/r/git/slint-desktop-kit"
