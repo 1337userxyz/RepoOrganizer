@@ -205,6 +205,16 @@ linux = "/r/git/slint-desktop-kit"
 macos = "/r/git/slint-desktop-kit"
 
 [[location]]
+id = "slint-desktop-kit-1-2"
+repo_id = "slint-desktop-kit"
+label = "slint-desktop-kit"
+role = "backup"
+
+[location.paths]
+linux = "/home/tristan/Projekte/slint-desktop-kit"
+macos = "/home/tristan/Projekte/slint-desktop-kit"
+
+[[location]]
 id = "star-trek-skills-1"
 repo_id = "star-trek-skills"
 label = "star-trek-skills"
