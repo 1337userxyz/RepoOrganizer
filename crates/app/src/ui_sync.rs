@@ -11,7 +11,7 @@ use slint::{ModelRc, SharedString, VecModel};
 
 use crate::state::*;
 use crate::{
-    present, CheckRow, DirtyFileRow, HeatItem, InfoRow, LocationRow, MainWindow, MappingRow,
+    present, CheckRow, DirtyFileRow, DirtyLocFilterItem, HeatItem, InfoRow, LocationRow, MainWindow, MappingRow,
     MissingBasePathRow, RepoRow, ScanRow, SettingsWindow, TaskRow, ViewRow,
 };
 
@@ -147,6 +147,7 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
         let ahead = snaps.iter().map(|s| s.ahead).max().unwrap_or(0);
         let behind = snaps.iter().map(|s| s.behind).max().unwrap_or(0);
         let dirty = snaps.iter().map(|s| s.dirty_files + s.untracked).max().unwrap_or(0);
+        let dirty_locs = snaps.iter().filter(|s| s.dirty_files + s.untracked > 0).count();
         let stashes = snaps.iter().map(|s| s.stash_count).max().unwrap_or(0);
         let commits = snaps.iter().map(|s| s.commit_count).max().unwrap_or(0);
         let files = snaps.iter().map(|s| s.file_count).max().unwrap_or(0);
@@ -158,7 +159,15 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
             .max(st.stats.get(&r.id).map(|rs| rs.git_size / 1024).unwrap_or(0));
         let has_drift = st.drift.get(&r.id).map(|m| !m.is_empty()).unwrap_or(false);
 
-        let build_bytes: u64 = snaps.iter().map(|s| s.build_size_bytes).sum();
+        let build_bytes: u64 = st
+            .shared
+            .locations_of(&r.id)
+            .filter_map(|l| match resolved(st, l) {
+                Resolved::Local(_) => st.snaps.get(&l.id).filter(|s| !matches!(s.state, Status::Unavailable | Status::NotARepo)),
+                Resolved::OtherOs => None,
+            })
+            .map(|s| s.build_size_bytes)
+            .sum();
         let build_size = repoorganizer_core::clean::format_bytes(build_bytes);
         let has_remote = !r.remote_url.is_empty();
         rows.push(RepoRow {
@@ -170,7 +179,7 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
             error_msg: present::status_error_short(&status).into(),
             kind: present::repo_display_kind(&status, ahead, behind, dirty, has_remote),
             branch: branch.into(),
-            sync_info: present::working_tree_text(dirty, stashes).into(),
+            sync_info: present::working_tree_text_locs(dirty, stashes, dirty_locs).into(),
             sync_kind: present::working_tree_kind(dirty),
             last_commit: present::format_commit_date(*last_c, now_t).into(),
             commits: if commits > 0 { commits.to_string().into() } else { "–".into() },
@@ -306,15 +315,25 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
             ui.set_stat_heat(ModelRc::default());
         }
     }
-    // Ansichten (Sidebar) mit Zählern
+    // Ansichten mit Zählern
     let mut vrows = vec![ViewRow { key: "".into(), name: "Alle Repos".into(), count: st.shared.repos.len() as i32, selected: st.view.is_empty(), custom: false }];
     let mut keys: Vec<(String, String, bool)> = BUILTIN.iter().map(|(k, n)| (format!("b:{k}"), n.to_string(), false)).collect();
     keys.extend(st.shared.views.iter().map(|v| (format!("c:{}", v.name), v.name.clone(), true)));
-    for (key, name, custom) in keys {
+    let mut selected_idx: i32 = 0;
+    for (i, (key, name, custom)) in keys.into_iter().enumerate() {
         let count = st.shared.repos.iter().filter(|r| view_ok(st, &key, &ctx_for(st, r, now_t))).count() as i32;
-        vrows.push(ViewRow { selected: st.view == key, key: key.into(), name: name.into(), count, custom });
+        let is_sel = st.view == key;
+        if is_sel {
+            selected_idx = (i + 1) as i32;
+        }
+        vrows.push(ViewRow { selected: is_sel, key: key.into(), name: name.into(), count, custom });
     }
+    let view_options: Vec<SharedString> = vrows.iter().map(|v| format!("{} ({})", v.name, v.count).into()).collect();
+    let is_custom = vrows.get(selected_idx as usize).map(|v| v.custom).unwrap_or(false);
     ui.set_views(vrows.to_slint_model());
+    ui.set_view_options(view_options.to_slint_model());
+    ui.set_selected_view_index(selected_idx);
+    ui.set_active_view_is_custom(is_custom);
     ui.set_active_view(st.view.as_str().into());
     let drows: Vec<InfoRow> = st
         .drift
@@ -409,6 +428,11 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
         let mut best_ahead_loc: Option<(String, String, u32)> = None;
 
         let t = now();
+        let mut all_dirty_rows: Vec<DirtyFileRow> = Vec::new();
+        let mut filter_items: Vec<DirtyLocFilterItem> = Vec::new();
+        let mut dirty_loc_count = 0;
+        let mut unique_dirty_paths = std::collections::HashSet::new();
+
         for l in st.shared.locations_of(&r.id) {
             let (path, other_os) = match resolved(st, l) {
                 Resolved::Local(p) => (p.display().to_string(), false),
@@ -427,8 +451,9 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
             let can_pull = !other_os && guard_pull(&state).is_ok();
             let can_push = !other_os && guard_push(&state).is_ok() && ahead > 0;
             let can_commit = !other_os && dirty > 0;
-            let b_bytes = snap.map(|s| s.build_size_bytes).unwrap_or(0);
-            let can_clean = !other_os && b_bytes > 0;
+            let is_unavailable = other_os || matches!(state, Status::Unavailable | Status::NotARepo);
+            let b_bytes = if is_unavailable { 0 } else { snap.map(|s| s.build_size_bytes).unwrap_or(0) };
+            let can_clean = !is_unavailable && b_bytes > 0;
             let b_size = repoorganizer_core::clean::format_bytes(b_bytes);
             let (rel_text, rel_kind) = if other_os {
                 ("⭘ Anderes OS".to_string(), 4)
@@ -440,8 +465,9 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
                 present::remote_relation_badge(ahead, behind, has_remote)
             };
 
+            let lbl = if l.label.is_empty() { l.id.clone() } else { l.label.clone() };
+
             if !other_os {
-                let lbl = if l.label.is_empty() { l.id.clone() } else { l.label.clone() };
                 let display_name = format!("{lbl} ({path})");
                 if dirty > 0 {
                     if best_dirty_loc.as_ref().map(|(_, _, d)| dirty > *d).unwrap_or(true) {
@@ -455,8 +481,48 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
                 }
             }
 
-            let last_dirty_time = snap
-                .and_then(|s| s.dirty_details.iter().filter_map(|d| d.mtime).max())
+            let loc_details = if dirty > 0 && !other_os {
+                if let Some(details) = snap.map(|s| s.dirty_details.clone()).filter(|d| !d.is_empty()) {
+                    details
+                } else if let Resolved::Local(p) = resolved(st, l) {
+                    let git = repoorganizer_git::CliGit::new(st.local.git_path.as_deref());
+                    git.dirty_files(&p)
+                } else {
+                    Vec::new()
+                }
+            } else {
+                Vec::new()
+            };
+
+            let loc_dirty_rows: Vec<DirtyFileRow> = loc_details.iter().map(|df| {
+                unique_dirty_paths.insert(df.path.clone());
+                DirtyFileRow {
+                    path: df.path.as_str().into(),
+                    status: df.status.as_str().into(),
+                    status_code: df.status_code.as_str().into(),
+                    kind: df.kind,
+                    mtime_text: present::format_mtime(df.mtime, t).into(),
+                    size_text: present::format_file_size(df.size_bytes).into(),
+                    loc_label: lbl.as_str().into(),
+                    loc_id: l.id.as_str().into(),
+                    loc_path: path.as_str().into(),
+                }
+            }).collect();
+
+            if !loc_dirty_rows.is_empty() {
+                dirty_loc_count += 1;
+                filter_items.push(DirtyLocFilterItem {
+                    id: l.id.as_str().into(),
+                    label: lbl.as_str().into(),
+                    count: loc_dirty_rows.len() as i32,
+                });
+                all_dirty_rows.extend(loc_dirty_rows.iter().cloned());
+            }
+
+            let last_dirty_time = loc_details
+                .iter()
+                .filter_map(|d| d.mtime)
+                .max()
                 .map(|m| present::format_mtime(Some(m), t))
                 .unwrap_or_else(|| if dirty > 0 { "vor kurzem".into() } else { "".into() });
 
@@ -467,7 +533,7 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
                 can_commit,
                 can_clean,
                 build_size: b_size.into(),
-                label: if l.label.is_empty() { l.id.as_str().into() } else { l.label.as_str().into() },
+                label: lbl.as_str().into(),
                 path: path.into(),
                 role: format!("{:?}", l.role).to_lowercase().into(),
                 status: rel_text.into(),
@@ -484,44 +550,32 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
                 pulled: present::ago(snap.and_then(|s| s.last_pull), t).into(),
                 last_dirty_time: last_dirty_time.into(),
                 other_os,
+                dirty_files: loc_dirty_rows.to_slint_model(),
             });
         }
 
-        let mut dirty_rows: Vec<DirtyFileRow> = Vec::new();
-        for l in st.shared.locations_of(&r.id) {
-            let loc_lbl = if l.label.is_empty() { l.id.clone() } else { l.label.clone() };
-            let snap = st.snaps.get(&l.id);
-            let dirty = snap.map(|s| s.dirty_files + s.untracked).unwrap_or(0);
-            if dirty > 0 {
-                let details = if let Some(s) = snap.filter(|s| !s.dirty_details.is_empty()) {
-                    s.dirty_details.clone()
-                } else if let Resolved::Local(p) = resolved(st, l) {
-                    let git = repoorganizer_git::CliGit::new(st.local.git_path.as_deref());
-                    let fresh = git.dirty_files(&p);
-                    if let Some(s_mut) = st.snaps.get_mut(&l.id) {
-                        s_mut.dirty_details = fresh.clone();
-                    }
-                    fresh
-                } else {
-                    Vec::new()
-                };
+        let headline = if all_dirty_rows.is_empty() {
+            "".to_string()
+        } else if dirty_loc_count > 1 {
+            format!(
+                "✎ {} uncommittete Datei{} an {} Standorten (insgesamt {} Dateistände) in {}",
+                unique_dirty_paths.len(),
+                if unique_dirty_paths.len() == 1 { "" } else { "en" },
+                dirty_loc_count,
+                all_dirty_rows.len(),
+                r.name
+            )
+        } else {
+            let loc_lbl = all_dirty_rows.first().map(|f| f.loc_label.as_str()).unwrap_or("");
+            format!(
+                "✎ {} uncommittete Datei{} in {} ({loc_lbl})",
+                all_dirty_rows.len(),
+                if all_dirty_rows.len() == 1 { "" } else { "en" },
+                r.name
+            )
+        };
 
-                for df in details {
-                    dirty_rows.push(DirtyFileRow {
-                        path: df.path.as_str().into(),
-                        status: df.status.as_str().into(),
-                        status_code: df.status_code.as_str().into(),
-                        kind: df.kind,
-                        mtime_text: present::format_mtime(df.mtime, t).into(),
-                        size_text: present::format_file_size(df.size_bytes).into(),
-                        loc_label: loc_lbl.as_str().into(),
-                        loc_id: l.id.as_str().into(),
-                    });
-                }
-            }
-        }
-
-        let dirty_summary = if !dirty_rows.is_empty() {
+        let dirty_summary = if !all_dirty_rows.is_empty() {
             let all_details: Vec<_> = st.shared.locations_of(&r.id)
                 .filter_map(|l| st.snaps.get(&l.id))
                 .flat_map(|s| s.dirty_details.iter().cloned())
@@ -531,8 +585,22 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
             "".into()
         };
 
-        ui.set_selected_dirty_files(dirty_rows.to_slint_model());
+        let current_filter = ui.get_dirty_loc_filter().to_string();
+        let display_rows: Vec<DirtyFileRow> = if current_filter == "all" || current_filter.is_empty() {
+            all_dirty_rows.clone()
+        } else {
+            let filtered: Vec<_> = all_dirty_rows.iter().filter(|f| f.loc_id == current_filter.as_str()).cloned().collect();
+            if filtered.is_empty() {
+                all_dirty_rows.clone()
+            } else {
+                filtered
+            }
+        };
+
+        ui.set_selected_dirty_files(display_rows.to_slint_model());
         ui.set_selected_dirty_summary(dirty_summary.into());
+        ui.set_selected_dirty_headline(headline.into());
+        ui.set_dirty_loc_options(filter_items.to_slint_model());
 
         if let Some((loc_id, name, dirty_count)) = best_dirty_loc {
             ui.set_selected_active_loc_id(loc_id.into());
@@ -665,6 +733,8 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
         ui.set_selected_suggested_dest("".into());
         ui.set_selected_dirty_files(ModelRc::default());
         ui.set_selected_dirty_summary("".into());
+        ui.set_selected_dirty_headline("".into());
+        ui.set_dirty_loc_options(ModelRc::default());
     }
     ui.set_locations(ModelRc::new(VecModel::from(locs)));
     let disk_msg = st.shared.locations.iter()

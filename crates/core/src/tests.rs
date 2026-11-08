@@ -188,11 +188,15 @@ mod m6 {
         assert!(cache::load(&p).is_empty());
         let mut s = Snapshot::empty("l1", Status::UpToDate);
         s.head_sha = Some("abc".into());
+        s.build_size_bytes = 1024 * 1024;
+        s.dirty_files = 3;
         cache::save(&p, &[s.clone()]).unwrap();
         assert_eq!(cache::load(&p), vec![s.clone()]);
         let merged = cache::merge(Some(&s), Snapshot::empty("l1", Status::Unavailable));
         assert_eq!(merged.head_sha.as_deref(), Some("abc"));
         assert_eq!(merged.state, Status::Unavailable);
+        assert_eq!(merged.build_size_bytes, 0);
+        assert_eq!(merged.dirty_files, 0);
         let fresh = cache::merge(Some(&s), Snapshot::empty("l1", Status::NotARepo));
         assert_eq!(fresh.state, Status::NotARepo);
     }

@@ -143,17 +143,35 @@ pub fn classify_dirty_status(xy: &str) -> (String, String, i32) {
     if xy.starts_with("??") {
         ("Neu (untracked)".into(), "?".into(), 1)
     } else if xy.contains('U') || xy == "AA" || xy == "DD" {
-        ("Konflikt".into(), "U".into(), 3)
-    } else if xy.contains('D') {
-        ("Gelöscht".into(), "D".into(), 3)
+        ("Merge-Konflikt".into(), "!".into(), 3)
+    } else if xy == "D " {
+        ("Gelöscht (staged)".into(), "+D".into(), 3)
+    } else if xy == " D" {
+        ("Gelöscht (Arbeitsbaum)".into(), "D".into(), 3)
     } else if xy.starts_with('A') {
-        ("Neu (staged)".into(), "A".into(), 0)
+        if xy.ends_with('M') {
+            ("Neu vorgemerkt (staged + Arbeitsbaum geändert)".into(), "±A".into(), 2)
+        } else {
+            ("Neu (staged)".into(), "+A".into(), 0)
+        }
     } else if xy.starts_with('R') {
-        ("Umbenannt".into(), "R".into(), 1)
-    } else if xy.starts_with('M') && xy.ends_with(' ') {
-        ("Geändert (staged)".into(), "M".into(), 0)
+        if xy.ends_with('M') {
+            ("Umbenannt (staged + Arbeitsbaum geändert)".into(), "±R".into(), 2)
+        } else {
+            ("Umbenannt (staged)".into(), "+R".into(), 0)
+        }
+    } else if xy == "M " {
+        ("Vorgemerkt (staged)".into(), "+M".into(), 0)
+    } else if xy == " M" {
+        ("Nicht vorgemerkt (Arbeitsbaum)".into(), "M".into(), 2)
+    } else if xy == "MM" {
+        ("Teilweise vorgemerkt (staged + Arbeitsbaum)".into(), "±M".into(), 2)
     } else if xy.contains('M') {
-        ("Geändert".into(), "M".into(), 2)
+        if xy.starts_with('M') {
+            ("Vorgemerkt (staged)".into(), "+M".into(), 0)
+        } else {
+            ("Nicht vorgemerkt (Arbeitsbaum)".into(), "M".into(), 2)
+        }
     } else {
         let code = xy.trim().chars().next().map(|c| c.to_string()).unwrap_or_else(|| "M".into());
         (format!("Offen ({})", xy.trim()), code, 2)

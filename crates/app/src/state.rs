@@ -107,7 +107,10 @@ pub fn ctx_for<'a>(st: &'a State, repo: &'a Repo, now: i64) -> RepoCtx<'a> {
         drift: st.drift.get(&repo.id).map(|m| !m.is_empty()).unwrap_or(false),
         offline: snaps.iter().all(|s| offline_state(&s.state)),
         health: st.health.get(&repo.id).map(|v| overall(&v.iter().map(|(_, f)| f.clone()).collect::<Vec<_>>())).unwrap_or(Level::Ok),
-        has_build_artifacts: snaps.iter().any(|s| s.build_size_bytes > 0),
+        has_build_artifacts: st.shared.locations_of(&repo.id).any(|l| {
+            matches!(resolved(st, l), Resolved::Local(_))
+                && st.snaps.get(&l.id).map(|s| !matches!(s.state, Status::Unavailable | Status::NotARepo) && s.build_size_bytes > 0).unwrap_or(false)
+        }),
         now,
     }
 }

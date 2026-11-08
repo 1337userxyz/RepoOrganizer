@@ -53,6 +53,12 @@ export struct TaskRow {
     detail: string,
 }
 
+export struct DirtyLocFilterItem {
+    id: string,
+    label: string,
+    count: int,
+}
+
 export struct DirtyFileRow {
     path: string,
     status: string,
@@ -62,6 +68,7 @@ export struct DirtyFileRow {
     size-text: string,
     loc-label: string,
     loc-id: string,
+    loc-path: string,
 }
 
 export struct LocationRow {
@@ -88,6 +95,7 @@ export struct LocationRow {
     pulled: string,
     last-dirty-time: string,
     other-os: bool,
+    dirty-files: [DirtyFileRow],
 }
 
 export struct MissingBasePathRow {
@@ -511,6 +519,9 @@ export component MainWindow inherits Window {
     in property <string> error-text;
     in property <[TaskRow]> tasks;
     in property <[ViewRow]> views;
+    in property <[string]> view-options;
+    in-out property <int> selected-view-index: 0;
+    in property <bool> active-view-is-custom: false;
     in property <[InfoRow]> drift-rows;
     in property <[InfoRow]> health-rows;
     in property <string> health-text;
@@ -542,10 +553,13 @@ export component MainWindow inherits Window {
     in property <int> selected-ahead-count: 0;
     in property <[DirtyFileRow]> selected-dirty-files;
     in property <string> selected-dirty-summary: "";
+    in property <string> selected-dirty-headline: "";
+    in property <[DirtyLocFilterItem]> dirty-loc-options;
+    in-out property <string> dirty-loc-filter: "all";
     in-out property <bool> show-dirty-files: false;
 
     // Dynamische Höhe des Detail-Panels & Aktivierung einzelner Detailansichten
-    in-out property <length> detail-panel-height: 280px;
+    in-out property <length> detail-panel-height: 180px;
     in-out property <string> active-detail-location-id: "";
     in-out property <bool> all-locations-expanded: false;
 
@@ -596,6 +610,7 @@ export component MainWindow inherits Window {
     callback location-action(string, string);
     callback commit(string, string);
     callback commit-and-push(string, string);
+    callback filter-dirty-location(string);
     callback publish-remote(string, string, bool);
     callback publish-github(string, bool);
     callback open-url(string);
@@ -628,64 +643,115 @@ export component MainWindow inherits Window {
     property <bool> adding: false;
     property <bool> has-col-filter: root.col-repo-filter != 0 || root.col-status-filter != 0 || root.col-sync-filter != 0 || root.col-commit-filter >= 2 || root.col-remote-filter != 0 || (root.col-branch-filter != "" && root.col-branch-filter != "Branch: Alle");
 
-    HorizontalLayout {
-        // Sidebar
+    VerticalLayout {
+        // Obere Haupt-App-Leiste: Titel, Ansichten-Auswahl und Werkzeuge
         Rectangle {
-            width: 210px;
-            background: #80808014;
-            VerticalLayout {
-                padding: 12px;
-                spacing: 8px;
-                Text { text: "RepoOrganizer"; font-size: 18px; font-weight: 700; }
-                Button { text: "Scan-Assistent…"; clicked => { root.open-scan(); } }
-                Button { text: "Einstellungen…"; clicked => { root.open-settings(); } }
-                Button { text: "🧹 Alle Builds leeren"; clicked => { root.clean-all-builds(); } }
-                if root.disk-info != "": Text { text: root.disk-info; font-size: 11px; opacity: 0.75; wrap: word-wrap; }
-                Text { text: "Ansichten"; font-weight: 600; font-size: 12px; opacity: 0.8; }
-                ListView {
-                    vertical-stretch: 1;
-                    for v in root.views: Rectangle {
-                        height: 28px;
-                        border-radius: 5px;
-                        background: v.selected ? #2a7fd433 : (vta.has-hover ? #80808022 : transparent);
-                        vta := TouchArea { clicked => { root.select-view(v.key); } }
-                        HorizontalLayout {
-                            padding-left: 8px;
-                            padding-right: 8px;
-                            spacing: 6px;
-                            Text { text: v.name; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
-                            Text { text: v.count; font-size: 11px; opacity: 0.7; vertical-alignment: center; }
-                            if v.custom: Text {
-                                text: "×";
-                                vertical-alignment: center;
-                                TouchArea { clicked => { root.delete-view(v.name); } }
-                            }
+            height: 44px;
+            background: #80808012;
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                padding-top: 6px;
+                padding-bottom: 6px;
+                spacing: 10px;
+
+                Text {
+                    text: "📂 RepoOrganizer";
+                    font-size: 16px;
+                    font-weight: 800;
+                    color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8;
+                    vertical-alignment: center;
+                }
+
+                Rectangle { width: 1px; height: 20px; background: #80808033; y: (parent.height - self.height) / 2; }
+
+                Text {
+                    text: "Ansicht:";
+                    font-size: 12px;
+                    font-weight: 700;
+                    opacity: 0.85;
+                    vertical-alignment: center;
+                }
+
+                ComboBox {
+                    width: 220px;
+                    model: root.view-options;
+                    current-index <=> root.selected-view-index;
+                    selected => {
+                        if root.selected-view-index >= 0 && root.selected-view-index < root.views.length {
+                            root.select-view(root.views[root.selected-view-index].key);
                         }
                     }
                 }
-                Button { text: "Ansicht speichern…"; clicked => { root.saving-view = !root.saving-view; } }
-                if root.saving-view: VerticalLayout {
-                    spacing: 4px;
-                    vn := LineEdit { placeholder-text: "Name"; }
-                    vt := LineEdit { placeholder-text: "Tags (a, b)"; }
-                    vs := LineEdit { placeholder-text: "Status: behind, dirty, …"; }
-                    vd := LineEdit { placeholder-text: "älter als N Tage"; input-type: number; }
-                    Button {
-                        text: "Speichern";
-                        enabled: vn.text != "";
-                        clicked => { root.add-view(vn.text, vt.text, vs.text, vd.text); vn.text = ""; vt.text = ""; vs.text = ""; vd.text = ""; root.saving-view = false; }
+
+                Button {
+                    text: "+ Ansicht speichern…";
+                    clicked => { root.saving-view = !root.saving-view; }
+                }
+
+                if root.active-view-is-custom: Button {
+                    text: "🗑 Ansicht löschen";
+                    clicked => {
+                        if root.selected-view-index >= 0 && root.selected-view-index < root.views.length {
+                            root.delete-view(root.views[root.selected-view-index].name);
+                        }
                     }
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+
+                Button {
+                    text: "🔍 Scan-Assistent…";
+                    clicked => { root.open-scan(); }
+                }
+                Button {
+                    text: "🧹 Builds leeren";
+                    clicked => { root.clean-all-builds(); }
+                }
+                Button {
+                    text: "⚙ Einstellungen…";
+                    clicked => { root.open-settings(); }
                 }
             }
         }
 
+        Rectangle { height: 1px; background: #80808028; }
+
+        // Hauptbereich
         VerticalLayout {
-            horizontal-stretch: 1;
-            // Oben: Suche + Aktionsleiste + DataGrid mit Filter-ComboBoxen im Header
-            VerticalLayout {
-                padding: 12px;
-                spacing: 8px;
-                vertical-stretch: 1;
+            padding: 10px;
+            spacing: 8px;
+            vertical-stretch: 1;
+
+            if root.saving-view: Rectangle {
+                background: (Palette.color-scheme == ColorScheme.dark) ? #1e293b : #2a7fd412;
+                border-width: 1px;
+                border-color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf866 : #2a7fd444;
+                border-radius: 6px;
+                HorizontalLayout {
+                    padding: 8px;
+                    spacing: 8px;
+                    Text { text: "Neue Ansicht speichern:"; font-weight: 700; font-size: 12px; vertical-alignment: center; }
+                    vn := LineEdit { placeholder-text: "Name"; width: 140px; }
+                    vt := LineEdit { placeholder-text: "Tags (z. B. work, tools)"; width: 160px; }
+                    vs := LineEdit { placeholder-text: "Status: behind, dirty, …"; width: 160px; }
+                    vd := LineEdit { placeholder-text: "älter als N Tage"; width: 100px; input-type: number; }
+                    Button {
+                        text: "Speichern";
+                        primary: true;
+                        enabled: vn.text != "";
+                        clicked => {
+                            root.add-view(vn.text, vt.text, vs.text, vd.text);
+                            vn.text = ""; vt.text = ""; vs.text = ""; vd.text = "";
+                            root.saving-view = false;
+                        }
+                    }
+                    Button {
+                        text: "Abbrechen";
+                        clicked => { root.saving-view = false; }
+                    }
+                }
+            }
 
                 HorizontalLayout {
                     spacing: 8px;
@@ -906,14 +972,14 @@ export component MainWindow inherits Window {
                                 }
                                 ColSep {}
                                 ComboBox {
-                                    width: 135px;
-                                    model: ["Dateien: Alle", "✓ Sauber", "✎ Uncommittet", "📦 Mit Stash"];
+                                    width: 140px;
+                                    model: ["Änderungen: Alle", "✓ Sauber", "✎ Geändert", "📦 Mit Stash"];
                                     current-index <=> root.col-sync-filter;
                                     selected => { root.column-filter-changed(); }
                                 }
                                 ColSep {}
                                 ComboBox {
-                                    width: 155px;
+                                    width: 150px;
                                     model: ["Commit: Neueste ↓", "Commit: Älteste ↑", "Heute (24h)", "Letzte 7 Tage", "Letzte 30 Tage", "> 30 Tage alt"];
                                     current-index <=> root.col-commit-filter;
                                     selected => { root.column-filter-changed(); }
@@ -1018,7 +1084,7 @@ export component MainWindow inherits Window {
                                         font-size: 12px;
                                         font-weight: repo.sync-kind == 2 ? 600 : 400;
                                         color: repo.sync-kind == 2 ? #d98e04 : #2e9e5b;
-                                        width: 135px;
+                                        width: 140px;
                                         vertical-alignment: center;
                                         overflow: elide;
                                     }
@@ -1028,7 +1094,7 @@ export component MainWindow inherits Window {
                                     Text {
                                         text: repo.last-commit;
                                         font-size: 12px;
-                                        width: 155px;
+                                        width: 150px;
                                         vertical-alignment: center;
                                         overflow: elide;
                                     }
@@ -1671,7 +1737,7 @@ export component MainWindow inherits Window {
                                                         }
                                                         Rectangle { horizontal-stretch: 1; }
                                                         Button {
-                                                            text: root.show-dirty-files ? "Dateien verbergen ▲" : ("Dateien anzeigen (" + root.selected-dirty-files.length + ") ▼");
+                                                            text: root.show-dirty-files ? "Dateien verbergen ▲" : ("Dateien anzeigen (" + loc.dirty + ") ▼");
                                                             clicked => { root.show-dirty-files = !root.show-dirty-files; }
                                                         }
                                                         Button {
@@ -1680,10 +1746,10 @@ export component MainWindow inherits Window {
                                                         }
                                                     }
 
-                                                    if root.show-dirty-files && root.selected-dirty-files.length > 0: VerticalLayout {
+                                                    if root.show-dirty-files && loc.dirty-files.length > 0: VerticalLayout {
                                                         spacing: 3px;
                                                         Rectangle { height: 1px; background: #d98e0433; }
-                                                        for file in root.selected-dirty-files: Rectangle {
+                                                        for file in loc.dirty-files: Rectangle {
                                                             height: 26px;
                                                             background: #8080800c;
                                                             border-radius: 4px;
@@ -1939,7 +2005,7 @@ export component MainWindow inherits Window {
                                 HorizontalLayout {
                                     spacing: 10px;
                                     Text {
-                                        text: root.selected-dirty-files.length == 0 ? "✓ Arbeitsverzeichnis ist sauber (keine uncommitteten Änderungen)" : ("✎ " + root.selected-dirty-files.length + " uncommittete Datei" + (root.selected-dirty-files.length == 1 ? "" : "en") + " in " + root.selected-name);
+                                        text: root.selected-dirty-headline != "" ? root.selected-dirty-headline : (root.selected-dirty-files.length == 0 ? "✓ Arbeitsverzeichnis ist sauber (keine uncommitteten Änderungen)" : ("✎ " + root.selected-dirty-files.length + " uncommittete Datei" + (root.selected-dirty-files.length == 1 ? "" : "en") + " in " + root.selected-name));
                                         font-size: 13px;
                                         font-weight: 700;
                                         color: root.selected-dirty-files.length == 0 ? #2e9e5b : #d98e04;
@@ -1952,6 +2018,34 @@ export component MainWindow inherits Window {
                                         vertical-alignment: center;
                                         horizontal-stretch: 1;
                                         overflow: elide;
+                                    }
+                                }
+
+                                // Standort-Filterleiste, falls Änderungen an mehreren Standorten existieren
+                                if root.dirty-loc-options.length > 1: HorizontalLayout {
+                                    spacing: 8px;
+                                    Text {
+                                        text: "Standort filtern:";
+                                        font-size: 11px;
+                                        font-weight: 700;
+                                        vertical-alignment: center;
+                                        opacity: 0.85;
+                                    }
+                                    Button {
+                                        text: "Alle Standorte";
+                                        primary: root.dirty-loc-filter == "all" || root.dirty-loc-filter == "";
+                                        clicked => {
+                                            root.dirty-loc-filter = "all";
+                                            root.filter-dirty-location("all");
+                                        }
+                                    }
+                                    for loc in root.dirty-loc-options: Button {
+                                        text: loc.label + " (" + loc.count + ")";
+                                        primary: root.dirty-loc-filter == loc.id;
+                                        clicked => {
+                                            root.dirty-loc-filter = loc.id;
+                                            root.filter-dirty-location(loc.id);
+                                        }
                                     }
                                 }
 
@@ -2010,12 +2104,12 @@ export component MainWindow inherits Window {
                                         padding-left: 10px;
                                         padding-right: 10px;
                                         spacing: 8px;
-                                        Text { text: "Status"; font-size: 11px; font-weight: 700; width: 140px; vertical-alignment: center; }
+                                        Text { text: "Staging / Status"; font-size: 11px; font-weight: 700; width: 180px; vertical-alignment: center; }
                                         Text { text: "Dateipfad"; font-size: 11px; font-weight: 700; horizontal-stretch: 1; vertical-alignment: center; }
-                                        Text { text: "Standort"; font-size: 11px; font-weight: 700; width: 110px; vertical-alignment: center; }
-                                        Text { text: "Größe"; font-size: 11px; font-weight: 700; width: 75px; horizontal-alignment: right; vertical-alignment: center; }
-                                        Text { text: "Letzte Änderungszeit"; font-size: 11px; font-weight: 700; width: 220px; vertical-alignment: center; }
-                                        Text { text: "Aktion"; font-size: 11px; font-weight: 700; width: 120px; horizontal-alignment: center; vertical-alignment: center; }
+                                        Text { text: "Standort"; font-size: 11px; font-weight: 700; width: 170px; vertical-alignment: center; }
+                                        Text { text: "Größe"; font-size: 11px; font-weight: 700; width: 70px; horizontal-alignment: right; vertical-alignment: center; }
+                                        Text { text: "Letzte Änderung"; font-size: 11px; font-weight: 700; width: 170px; vertical-alignment: center; }
+                                        Text { text: "Aktion"; font-size: 11px; font-weight: 700; width: 110px; horizontal-alignment: center; vertical-alignment: center; }
                                     }
                                 }
 
@@ -2034,7 +2128,7 @@ export component MainWindow inherits Window {
                                                 padding-right: 10px;
                                                 spacing: 8px;
                                                 HorizontalLayout {
-                                                    width: 140px;
+                                                    width: 180px;
                                                     spacing: 6px;
                                                     Badge {
                                                         text: file.status-code;
@@ -2047,6 +2141,7 @@ export component MainWindow inherits Window {
                                                         font-weight: 600;
                                                         color: Kinds.kind-color(file.kind);
                                                         vertical-alignment: center;
+                                                        overflow: elide;
                                                     }
                                                 }
                                                 Text {
@@ -2059,8 +2154,8 @@ export component MainWindow inherits Window {
                                                 Text {
                                                     text: file.loc-label;
                                                     font-size: 11px;
-                                                    opacity: 0.7;
-                                                    width: 110px;
+                                                    opacity: 0.85;
+                                                    width: 170px;
                                                     overflow: elide;
                                                     vertical-alignment: center;
                                                 }
@@ -2068,19 +2163,19 @@ export component MainWindow inherits Window {
                                                     text: file.size-text;
                                                     font-size: 11px;
                                                     opacity: 0.7;
-                                                    width: 75px;
+                                                    width: 70px;
                                                     horizontal-alignment: right;
                                                     vertical-alignment: center;
                                                 }
                                                 Text {
                                                     text: file.mtime-text;
-                                                    font-size: 12px;
+                                                    font-size: 11px;
                                                     opacity: 0.85;
-                                                    width: 220px;
+                                                    width: 170px;
                                                     vertical-alignment: center;
                                                 }
                                                 HorizontalLayout {
-                                                    width: 120px;
+                                                    width: 110px;
                                                     spacing: 4px;
                                                     alignment: center;
                                                     Button {
@@ -2116,6 +2211,7 @@ export component MainWindow inherits Window {
                         height: 24px;
                         spacing: 8px;
                         Text { text: root.task-text; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                        if root.disk-info != "": Text { text: root.disk-info; font-size: 11px; opacity: 0.75; vertical-alignment: center; }
                         Button {
                             text: root.tasks-open ? "Protokoll ▼ (" + root.tasks.length + ")" : "Protokoll ▲ (" + root.tasks.length + ")";
                             clicked => { root.tasks-open = !root.tasks-open; }
@@ -2138,4 +2234,3 @@ export component MainWindow inherits Window {
             }
         }
     }
-}

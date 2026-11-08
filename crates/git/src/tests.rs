@@ -298,16 +298,26 @@ fn dirty_porcelain_parsing() {
     std::fs::write(tmp.path().join("mod.rs"), "fn hello() {}").unwrap();
     std::fs::write(tmp.path().join("new.txt"), "fresh").unwrap();
 
-    let fake_out = " M mod.rs\n?? new.txt\n D deleted.txt\nA  staged.rs\n";
+    let fake_out = " M mod.rs\n?? new.txt\n D deleted.txt\nA  staged.rs\nM  staged_mod.rs\nMM both.rs\n";
     let files = parse::parse_porcelain_dirty(fake_out, tmp.path());
-    assert_eq!(files.len(), 4);
+    assert_eq!(files.len(), 6);
 
     let m = files.iter().find(|f| f.path == "mod.rs").unwrap();
     assert_eq!(m.status_code, "M");
-    assert_eq!(m.status, "Geändert");
+    assert_eq!(m.status, "Nicht vorgemerkt (Arbeitsbaum)");
     assert_eq!(m.kind, 2);
     assert!(m.mtime.is_some());
     assert!(m.size_bytes.is_some());
+
+    let sm = files.iter().find(|f| f.path == "staged_mod.rs").unwrap();
+    assert_eq!(sm.status_code, "+M");
+    assert_eq!(sm.status, "Vorgemerkt (staged)");
+    assert_eq!(sm.kind, 0);
+
+    let mm = files.iter().find(|f| f.path == "both.rs").unwrap();
+    assert_eq!(mm.status_code, "±M");
+    assert_eq!(mm.status, "Teilweise vorgemerkt (staged + Arbeitsbaum)");
+    assert_eq!(mm.kind, 2);
 
     let u = files.iter().find(|f| f.path == "new.txt").unwrap();
     assert_eq!(u.status_code, "?");
@@ -316,7 +326,7 @@ fn dirty_porcelain_parsing() {
 
     let d = files.iter().find(|f| f.path == "deleted.txt").unwrap();
     assert_eq!(d.status_code, "D");
-    assert_eq!(d.status, "Gelöscht");
+    assert_eq!(d.status, "Gelöscht (Arbeitsbaum)");
     assert_eq!(d.kind, 3);
     assert!(d.mtime.is_none());
 }

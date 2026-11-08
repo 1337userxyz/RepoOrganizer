@@ -18,9 +18,17 @@ pub fn save(path: &Path, snaps: &[Snapshot]) -> Result<(), ConfigError> {
 }
 
 /// Ist ein Standort jetzt nicht erreichbar, bleibt der letzte bekannte Stand (als Unavailable) erhalten.
+/// Flüchtige Arbeitsdaten (Build-Artefakte, uncommittete Arbeitsdateien) werden genullt, da sie offline nicht greifbar sind.
 pub fn merge(old: Option<&Snapshot>, new: Snapshot) -> Snapshot {
     match (&new.state, old) {
-        (Status::Unavailable, Some(o)) if o.head_sha.is_some() => Snapshot { state: Status::Unavailable, ..o.clone() },
+        (Status::Unavailable, Some(o)) if o.head_sha.is_some() => Snapshot {
+            state: Status::Unavailable,
+            build_size_bytes: 0,
+            dirty_files: 0,
+            untracked: 0,
+            dirty_details: Vec::new(),
+            ..o.clone()
+        },
         _ => new,
     }
 }

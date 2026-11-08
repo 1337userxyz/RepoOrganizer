@@ -171,6 +171,16 @@ pub fn register(ui: &MainWindow, state: &Shared) {
     }
     {
         let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_filter_dirty_location(move |loc_id: SharedString| {
+            if let Some(ui) = weak.upgrade() {
+                ui.set_dirty_loc_filter(loc_id.clone());
+                let mut st = state.lock().unwrap();
+                apply(&ui, &mut st);
+            }
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
         ui.on_delete_location(move |loc: SharedString| {
             if let Some(ui) = weak.upgrade() {
                 let mut st = state.lock().unwrap();

@@ -98,12 +98,24 @@ pub fn remote_sync_kind(s: &Status, ahead: u32, behind: u32, has_remote: bool) -
 
 /// Status der lokalen Arbeitskopie (uncommittete / geänderte / neue Dateien auf der Festplatte).
 pub fn working_tree_text(dirty: u32, stashes: u32) -> String {
+    working_tree_text_locs(dirty, stashes, 1)
+}
+
+pub fn working_tree_text_locs(dirty: u32, stashes: u32, dirty_locs: usize) -> String {
     if dirty == 0 && stashes == 0 {
         "✓ Sauber".into()
     } else if dirty > 0 && stashes > 0 {
-        format!("✎ {dirty} uncommittet · 📦{stashes}")
+        if dirty_locs > 1 {
+            format!("✎ {dirty} ({dirty_locs} Orte) · 📦{stashes}")
+        } else {
+            format!("✎ {dirty} · 📦{stashes}")
+        }
     } else if dirty > 0 {
-        format!("✎ {dirty} uncommittet")
+        if dirty_locs > 1 {
+            format!("✎ {dirty} ({dirty_locs} Orte)")
+        } else {
+            format!("✎ {dirty}")
+        }
     } else {
         format!("✓ Sauber · 📦{stashes}")
     }
@@ -356,6 +368,16 @@ mod tests {
         assert_eq!(format_file_size(Some(500)), "500 B");
         assert_eq!(format_file_size(Some(2048)), "2.0 KB");
         assert_eq!(format_file_size(Some(5 * 1024 * 1024)), "5.0 MB");
+    }
+
+    #[test]
+    fn working_tree_text_locs_formatting() {
+        assert_eq!(working_tree_text_locs(0, 0, 0), "✓ Sauber");
+        assert_eq!(working_tree_text_locs(0, 2, 0), "✓ Sauber · 📦2");
+        assert_eq!(working_tree_text_locs(8, 0, 1), "✎ 8");
+        assert_eq!(working_tree_text_locs(8, 0, 2), "✎ 8 (2 Orte)");
+        assert_eq!(working_tree_text_locs(8, 3, 2), "✎ 8 (2 Orte) · 📦3");
+        assert_eq!(working_tree_text_locs(8, 1, 1), "✎ 8 · 📦1");
     }
 }
 
