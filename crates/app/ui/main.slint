@@ -544,6 +544,11 @@ export component MainWindow inherits Window {
     in property <string> selected-dirty-summary: "";
     in-out property <bool> show-dirty-files: false;
 
+    // Dynamische Höhe des Detail-Panels & Aktivierung einzelner Detailansichten
+    in-out property <length> detail-panel-height: 280px;
+    in-out property <string> active-detail-location-id: "";
+    in-out property <bool> all-locations-expanded: false;
+
     // Globaler Toolbar-Commit & Push
     in-out property <bool> quick-commit-open: false;
     in property <int> dirty-repos-count: 0;
@@ -1137,9 +1142,45 @@ export component MainWindow inherits Window {
                 }
             }
 
+            // Höhenverstellbarer Splitter-Balken zwischen Repo-Tabelle und Detailansicht
+            Rectangle {
+                height: 8px;
+                background: splitter-ta.has-hover || splitter-ta.pressed ? #2a7fd455 : #80808020;
+                clip: false;
+
+                // Horizontale Griff-Markierung in der Mitte
+                Rectangle {
+                    width: 48px;
+                    height: 4px;
+                    background: splitter-ta.has-hover || splitter-ta.pressed ? #2a7fd4 : #80808066;
+                    border-radius: 2px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+
+                splitter-ta := TouchArea {
+                    mouse-cursor: row-resize;
+                    moved => {
+                        if self.pressed {
+                            let delta = self.mouse-y - self.pressed-y;
+                            root.detail-panel-height = max(110px, min(root.height - 200px, root.detail-panel-height - delta));
+                        }
+                    }
+                    double-clicked => {
+                        if root.detail-panel-height < 220px {
+                            root.detail-panel-height = 320px;
+                        } else if root.detail-panel-height < 450px {
+                            root.detail-panel-height = min(620px, root.height - 200px);
+                        } else {
+                            root.detail-panel-height = 140px;
+                        }
+                    }
+                }
+            }
+
             // Unten: Dauerhaft sichtbares Detail-Panel über die volle Breite
             Rectangle {
-                height: 350px;
+                height: root.detail-panel-height;
                 background: #80808012;
                 border-width: 1px;
                 border-color: #80808028;
@@ -1177,6 +1218,20 @@ export component MainWindow inherits Window {
                         Button { text: "Health"; primary: root.detail-tab == 2; clicked => { root.detail-tab = 2; } }
                         Button { text: "Statistik"; primary: root.detail-tab == 3; clicked => { root.detail-tab = 3; root.load-stats(root.selected-id, false); } }
                         Button { text: "Meta / Remote"; primary: root.detail-tab == 4; clicked => { root.detail-tab = 4; } }
+
+                        // Schnelle Größenanpassung des Detail-Panels
+                        Button {
+                            text: "⯆";
+                            clicked => { root.detail-panel-height = 140px; }
+                        }
+                        Button {
+                            text: "⯀";
+                            clicked => { root.detail-panel-height = 280px; }
+                        }
+                        Button {
+                            text: "⯅";
+                            clicked => { root.detail-panel-height = max(450px, root.height - 240px); }
+                        }
                     }
 
                     // Trennlinie unter Kopfzeile
@@ -1394,34 +1449,99 @@ export component MainWindow inherits Window {
                             }
                         }
 
+                        // Kopfzeile der Standorte mit Auf-/Zuklapp-Option
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text {
+                                text: "📁 Standorte & Pfade (" + root.locations.length + "):";
+                                font-size: 12px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+                            if root.locations.length > 1: Button {
+                                text: root.all-locations-expanded ? "Alle Details einklappen ▲" : "Alle Details ausklappen ▼";
+                                clicked => {
+                                    root.all-locations-expanded = !root.all-locations-expanded;
+                                    if !root.all-locations-expanded {
+                                        root.active-detail-location-id = "";
+                                    }
+                                }
+                            }
+                        }
+
                         ScrollView {
                             vertical-stretch: 1;
                             VerticalLayout {
-                                spacing: 6px;
+                                spacing: 4px;
                                 alignment: start;
                                 for loc in root.locations: Rectangle {
-                                    background: #80808012;
-                                    border-width: 1px;
-                                    border-color: #80808028;
-                                    border-radius: 8px;
+                                    property <bool> is-active: root.all-locations-expanded || root.active-detail-location-id == loc.id;
+                                    background: is-active ? #2a7fd418 : #8080800e;
+                                    border-width: is-active ? 2px : 1px;
+                                    border-color: is-active ? #2a7fd4cc : #80808022;
+                                    border-radius: 7px;
                                     opacity: loc.other-os ? 0.5 : 1.0;
                                     VerticalLayout {
-                                        padding: 8px;
+                                        padding: 7px;
                                         spacing: 6px;
-                                        // Zeile 1: Kopfzeile des Standorts (Badges, Name, Rolle, Branch, Ahead/Behind & Aktions-Buttons)
+
+                                        // Kompakte Pfadzeile: Immer sichtbar als Pfad-Eintrag
                                         HorizontalLayout {
                                             spacing: 8px;
+                                            if is-active: Rectangle {
+                                                width: 4px;
+                                                height: 20px;
+                                                background: #2a7fd4;
+                                                border-radius: 2px;
+                                                y: (parent.height - self.height) / 2;
+                                            }
+                                            Rectangle {
+                                                horizontal-stretch: 1;
+                                                Text {
+                                                    x: 0;
+                                                    width: parent.width;
+                                                    height: parent.height;
+                                                    text: (is-active ? "📂 " : "📁 ") + loc.path;
+                                                    font-size: is-active ? 14px : 13px;
+                                                    font-weight: is-active ? 700 : 600;
+                                                    color: is-active ? #2a7fd4 : (Palette.color-scheme == ColorScheme.dark ? #ffffff : #18181b);
+                                                    vertical-alignment: center;
+                                                    overflow: elide;
+                                                }
+                                                TouchArea {
+                                                    mouse-cursor: pointer;
+                                                    clicked => {
+                                                        if root.active-detail-location-id == loc.id {
+                                                            root.active-detail-location-id = "";
+                                                            root.all-locations-expanded = false;
+                                                        } else {
+                                                            root.active-detail-location-id = loc.id;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            if is-active: Badge {
+                                                text: "Aktiv";
+                                                kind: 1;
+                                                y: (parent.height - self.height) / 2;
+                                            }
                                             Badge { text: loc.status; kind: loc.kind; y: (parent.height - self.height) / 2; }
                                             if !loc.other-os && loc.kind != 4: Badge {
                                                 text: loc.working-tree;
                                                 kind: loc.working-tree-kind;
                                                 y: (parent.height - self.height) / 2;
                                             }
-                                            Text { text: loc.label; font-weight: 700; font-size: 13px; vertical-alignment: center; }
-                                            Badge { text: loc.role; kind: 4; y: (parent.height - self.height) / 2; }
+                                            Text {
+                                                text: loc.label + " (" + loc.role + ")";
+                                                font-size: 11px;
+                                                font-weight: is-active ? 600 : 400;
+                                                opacity: is-active ? 0.95 : 0.7;
+                                                vertical-alignment: center;
+                                            }
                                             if loc.branch != "": Text {
                                                 text: "⎇ " + loc.branch;
-                                                font-size: 12px;
+                                                font-size: 11px;
                                                 font-weight: 600;
                                                 vertical-alignment: center;
                                             }
@@ -1435,187 +1555,214 @@ export component MainWindow inherits Window {
                                                 kind: 2;
                                                 y: (parent.height - self.height) / 2;
                                             }
-                                            Rectangle { horizontal-stretch: 1; }
 
-                                            if loc.other-os || loc.kind == 4: Button {
-                                                text: "📥 Klonen";
-                                                primary: true;
-                                                enabled: root.selected-remote != "";
-                                                clicked => { root.clone-offline-location(loc.id); }
-                                            }
-                                            if !loc.other-os && loc.kind != 4: HorizontalLayout {
-                                                spacing: 4px;
-                                                Button { text: "Fetch"; enabled: root.selected-remote != ""; clicked => { root.location-action(loc.id, "fetch"); } }
-                                                Button { text: loc.behind > 0 ? ("Pull (" + loc.behind + ") ↓") : "Pull"; primary: loc.behind > 0; enabled: loc.can-pull && root.selected-remote != ""; clicked => { root.location-action(loc.id, "pull"); } }
-                                                Button { text: loc.ahead > 0 ? ("Push (" + loc.ahead + ") ↑") : "Push"; primary: loc.ahead > 0 && loc.dirty == 0; enabled: loc.can-push && root.selected-remote != ""; clicked => { root.location-action(loc.id, "push"); } }
-                                                Button { text: "Stash"; enabled: loc.can-commit; clicked => { root.location-action(loc.id, "stash"); } }
-                                                if loc.stashes > 0: Button { text: "Pop (" + loc.stashes + ")"; clicked => { root.location-action(loc.id, "stash_pop"); } }
-                                                Rectangle { width: 1px; height: 18px; background: #80808033; y: (parent.height - self.height) / 2; }
-                                                Button { text: "Explorer"; clicked => { root.open-in(loc.id, "explorer"); } }
-                                                Button { text: "Terminal"; clicked => { root.open-in(loc.id, "terminal"); } }
-                                                Button { text: "VS Code"; clicked => { root.open-in(loc.id, "code"); } }
-                                                Rectangle { width: 1px; height: 18px; background: #80808033; y: (parent.height - self.height) / 2; }
-                                                if loc.can-clean: Button { text: "Clean (" + loc.build-size + ")"; clicked => { root.location-action(loc.id, "clean"); } }
-                                                Button { text: "×"; clicked => { root.delete-location(loc.id); } }
+                                            Button {
+                                                text: is-active ? "Details schließen ▲" : "Details öffnen ▼";
+                                                primary: is-active;
+                                                clicked => {
+                                                    if root.active-detail-location-id == loc.id {
+                                                        root.active-detail-location-id = "";
+                                                        root.all-locations-expanded = false;
+                                                    } else {
+                                                        root.active-detail-location-id = loc.id;
+                                                    }
+                                                }
                                             }
                                         }
 
-                                        // Trennlinie vor Pfad & Sync-Zeiten
-                                        Rectangle { height: 1px; background: #80808018; }
+                                        // Wenn aktiviert: Die volle strukturierte Detailansicht für diesen Standort
+                                        if is-active: VerticalLayout {
+                                            spacing: 6px;
 
-                                        // Zeile 2: Pfad & Synchronisations-Zeiten
-                                        HorizontalLayout {
-                                            spacing: 10px;
-                                            Text { text: "📁 " + loc.path; font-size: 12px; opacity: 0.85; horizontal-stretch: 1; overflow: elide; vertical-alignment: center; }
-                                            Text { text: "Fetch: " + loc.fetched + " · Pull: " + loc.pulled + (loc.build-size != "-" && loc.build-size != "–" ? " · Build: " + loc.build-size : ""); font-size: 11px; opacity: 0.65; vertical-alignment: center; }
-                                        }
+                                            Rectangle { height: 1px; background: #80808018; }
 
-                                        // Zeile 3 (nur bei Fehler): Vollständige Meldung + Direkt-Behebung
-                                        if loc.error-msg != "": Rectangle {
-                                            background: #e0434718;
-                                            border-width: 1px;
-                                            border-color: #e0434755;
-                                            border-radius: 6px;
+                                            // Aktionen & Tools
                                             HorizontalLayout {
-                                                padding: 6px;
-                                                spacing: 10px;
+                                                spacing: 8px;
                                                 Text {
-                                                    text: "⚠ " + loc.error-msg;
+                                                    text: "Aktionen für diesen Standort:";
                                                     font-size: 11px;
-                                                    color: #e04347;
-                                                    wrap: word-wrap;
-                                                    horizontal-stretch: 1;
+                                                    font-weight: 600;
+                                                    opacity: 0.75;
                                                     vertical-alignment: center;
                                                 }
-                                                Button {
-                                                    text: "Als sicher zulassen (safe.directory)";
-                                                    clicked => { root.location-action(loc.id, "trust"); }
+                                                Rectangle { horizontal-stretch: 1; }
+
+                                                if loc.other-os || loc.kind == 4: Button {
+                                                    text: "📥 Klonen";
+                                                    primary: true;
+                                                    enabled: root.selected-remote != "";
+                                                    clicked => { root.clone-offline-location(loc.id); }
                                                 }
-                                                Button {
-                                                    text: "Besitz übernehmen (Ownership)";
-                                                    clicked => { root.location-action(loc.id, "take_ownership"); }
+                                                if !loc.other-os && loc.kind != 4: HorizontalLayout {
+                                                    spacing: 4px;
+                                                    Button { text: "Fetch"; enabled: root.selected-remote != ""; clicked => { root.location-action(loc.id, "fetch"); } }
+                                                    Button { text: loc.behind > 0 ? ("Pull (" + loc.behind + ") ↓") : "Pull"; primary: loc.behind > 0; enabled: loc.can-pull && root.selected-remote != ""; clicked => { root.location-action(loc.id, "pull"); } }
+                                                    Button { text: loc.ahead > 0 ? ("Push (" + loc.ahead + ") ↑") : "Push"; primary: loc.ahead > 0 && loc.dirty == 0; enabled: loc.can-push && root.selected-remote != ""; clicked => { root.location-action(loc.id, "push"); } }
+                                                    Button { text: "Stash"; enabled: loc.can-commit; clicked => { root.location-action(loc.id, "stash"); } }
+                                                    if loc.stashes > 0: Button { text: "Pop (" + loc.stashes + ")"; clicked => { root.location-action(loc.id, "stash_pop"); } }
+                                                    Rectangle { width: 1px; height: 18px; background: #80808033; y: (parent.height - self.height) / 2; }
+                                                    Button { text: "Explorer"; clicked => { root.open-in(loc.id, "explorer"); } }
+                                                    Button { text: "Terminal"; clicked => { root.open-in(loc.id, "terminal"); } }
+                                                    Button { text: "VS Code"; clicked => { root.open-in(loc.id, "code"); } }
+                                                    Rectangle { width: 1px; height: 18px; background: #80808033; y: (parent.height - self.height) / 2; }
+                                                    if loc.can-clean: Button { text: "Clean (" + loc.build-size + ")"; clicked => { root.location-action(loc.id, "clean"); } }
+                                                    Button { text: "×"; clicked => { root.delete-location(loc.id); } }
                                                 }
                                             }
-                                        }
 
-                                        // Zeile 4 (nur wenn uncommittete Änderungen vorliegen): Strukturierter Arbeitskopie-Bereich
-                                        if loc.can-commit: Rectangle {
-                                            background: #d98e0412;
-                                            border-width: 1px;
-                                            border-color: #d98e0455;
-                                            border-radius: 6px;
-                                            VerticalLayout {
-                                                padding: 8px;
-                                                spacing: 6px;
+                                            // Sync-Zeiten & Build-Status
+                                            HorizontalLayout {
+                                                spacing: 10px;
+                                                Text { text: "Synchronisations-Status: Letzter Fetch: " + loc.fetched + " · Letzter Pull: " + loc.pulled + (loc.build-size != "-" && loc.build-size != "–" ? " · Build: " + loc.build-size : ""); font-size: 11px; opacity: 0.65; vertical-alignment: center; }
+                                            }
+
+                                            // Fehlermeldung falls vorhanden
+                                            if loc.error-msg != "": Rectangle {
+                                                background: #e0434718;
+                                                border-width: 1px;
+                                                border-color: #e0434755;
+                                                border-radius: 6px;
                                                 HorizontalLayout {
-                                                    spacing: 8px;
+                                                    padding: 6px;
+                                                    spacing: 10px;
                                                     Text {
-                                                        text: "✎ Arbeitskopie (" + loc.dirty + " uncommittete Datei" + (loc.dirty == 1 ? "" : "en") + "):";
-                                                        font-size: 12px;
-                                                        font-weight: 700;
-                                                        color: #d98e04;
-                                                        vertical-alignment: center;
-                                                    }
-                                                    if loc.last-dirty-time != "": Text {
-                                                        text: "· Letzte Änderung: " + loc.last-dirty-time;
+                                                        text: "⚠ " + loc.error-msg;
                                                         font-size: 11px;
-                                                        opacity: 0.85;
+                                                        color: #e04347;
+                                                        wrap: word-wrap;
+                                                        horizontal-stretch: 1;
                                                         vertical-alignment: center;
                                                     }
-                                                    Rectangle { horizontal-stretch: 1; }
                                                     Button {
-                                                        text: root.show-dirty-files ? "Dateien verbergen ▲" : ("Dateien anzeigen (" + root.selected-dirty-files.length + ") ▼");
-                                                        clicked => { root.show-dirty-files = !root.show-dirty-files; }
+                                                        text: "Als sicher zulassen (safe.directory)";
+                                                        clicked => { root.location-action(loc.id, "trust"); }
                                                     }
                                                     Button {
-                                                        text: "Detail-Tabelle →";
-                                                        clicked => { root.detail-tab = 5; }
+                                                        text: "Besitz übernehmen (Ownership)";
+                                                        clicked => { root.location-action(loc.id, "take_ownership"); }
                                                     }
                                                 }
+                                            }
 
-                                                // Ausklappbare Dateiliste
-                                                if root.show-dirty-files && root.selected-dirty-files.length > 0: VerticalLayout {
-                                                    spacing: 3px;
+                                            // Arbeitskopie / Uncommittete Änderungen
+                                            if loc.can-commit: Rectangle {
+                                                background: #d98e0412;
+                                                border-width: 1px;
+                                                border-color: #d98e0455;
+                                                border-radius: 6px;
+                                                VerticalLayout {
+                                                    padding: 8px;
+                                                    spacing: 6px;
+                                                    HorizontalLayout {
+                                                        spacing: 8px;
+                                                        Text {
+                                                            text: "✎ Arbeitskopie (" + loc.dirty + " uncommittete Datei" + (loc.dirty == 1 ? "" : "en") + "):";
+                                                            font-size: 12px;
+                                                            font-weight: 700;
+                                                            color: #d98e04;
+                                                            vertical-alignment: center;
+                                                        }
+                                                        if loc.last-dirty-time != "": Text {
+                                                            text: "· Letzte Änderung: " + loc.last-dirty-time;
+                                                            font-size: 11px;
+                                                            opacity: 0.85;
+                                                            vertical-alignment: center;
+                                                        }
+                                                        Rectangle { horizontal-stretch: 1; }
+                                                        Button {
+                                                            text: root.show-dirty-files ? "Dateien verbergen ▲" : ("Dateien anzeigen (" + root.selected-dirty-files.length + ") ▼");
+                                                            clicked => { root.show-dirty-files = !root.show-dirty-files; }
+                                                        }
+                                                        Button {
+                                                            text: "Detail-Tabelle →";
+                                                            clicked => { root.detail-tab = 5; }
+                                                        }
+                                                    }
+
+                                                    if root.show-dirty-files && root.selected-dirty-files.length > 0: VerticalLayout {
+                                                        spacing: 3px;
+                                                        Rectangle { height: 1px; background: #d98e0433; }
+                                                        for file in root.selected-dirty-files: Rectangle {
+                                                            height: 26px;
+                                                            background: #8080800c;
+                                                            border-radius: 4px;
+                                                            HorizontalLayout {
+                                                                padding-left: 6px;
+                                                                padding-right: 6px;
+                                                                spacing: 8px;
+                                                                Badge {
+                                                                    text: file.status-code;
+                                                                    kind: file.kind;
+                                                                    y: (parent.height - self.height) / 2;
+                                                                }
+                                                                Text {
+                                                                    text: file.status;
+                                                                    font-size: 11px;
+                                                                    font-weight: 600;
+                                                                    color: Kinds.kind-color(file.kind);
+                                                                    vertical-alignment: center;
+                                                                    width: 120px;
+                                                                }
+                                                                Text {
+                                                                    text: file.path;
+                                                                    font-size: 11px;
+                                                                    horizontal-stretch: 1;
+                                                                    overflow: elide;
+                                                                    vertical-alignment: center;
+                                                                }
+                                                                if file.size-text != "": Text {
+                                                                    text: file.size-text;
+                                                                    font-size: 11px;
+                                                                    opacity: 0.7;
+                                                                    width: 60px;
+                                                                    horizontal-alignment: right;
+                                                                    vertical-alignment: center;
+                                                                }
+                                                                Text {
+                                                                    text: file.mtime-text;
+                                                                    font-size: 11px;
+                                                                    opacity: 0.8;
+                                                                    width: 180px;
+                                                                    vertical-alignment: center;
+                                                                }
+                                                                Button {
+                                                                    text: "Öffnen";
+                                                                    clicked => { root.open-file(file.loc-id, file.path); }
+                                                                }
+                                                                Button {
+                                                                    text: "Code";
+                                                                    clicked => { root.open-file-in-code(file.loc-id, file.path); }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+
                                                     Rectangle { height: 1px; background: #d98e0433; }
-                                                    for file in root.selected-dirty-files: Rectangle {
-                                                        height: 26px;
-                                                        background: #8080800c;
-                                                        border-radius: 4px;
-                                                        HorizontalLayout {
-                                                            padding-left: 6px;
-                                                            padding-right: 6px;
-                                                            spacing: 8px;
-                                                            Badge {
-                                                                text: file.status-code;
-                                                                kind: file.kind;
-                                                                y: (parent.height - self.height) / 2;
-                                                            }
-                                                            Text {
-                                                                text: file.status;
-                                                                font-size: 11px;
-                                                                font-weight: 600;
-                                                                color: Kinds.kind-color(file.kind);
-                                                                vertical-alignment: center;
-                                                                width: 120px;
-                                                            }
-                                                            Text {
-                                                                text: file.path;
-                                                                font-size: 11px;
-                                                                horizontal-stretch: 1;
-                                                                overflow: elide;
-                                                                vertical-alignment: center;
-                                                            }
-                                                            if file.size-text != "": Text {
-                                                                text: file.size-text;
-                                                                font-size: 11px;
-                                                                opacity: 0.7;
-                                                                width: 60px;
-                                                                horizontal-alignment: right;
-                                                                vertical-alignment: center;
-                                                            }
-                                                            Text {
-                                                                text: file.mtime-text;
-                                                                font-size: 11px;
-                                                                opacity: 0.8;
-                                                                width: 180px;
-                                                                vertical-alignment: center;
-                                                            }
-                                                            Button {
-                                                                text: "Öffnen";
-                                                                clicked => { root.open-file(file.loc-id, file.path); }
-                                                            }
-                                                            Button {
-                                                                text: "Code";
-                                                                clicked => { root.open-file-in-code(file.loc-id, file.path); }
+
+                                                    HorizontalLayout {
+                                                        spacing: 8px;
+                                                        msg := LineEdit {
+                                                            placeholder-text: "Commit-Nachricht eingeben… (Enter für Commit & Push)";
+                                                            horizontal-stretch: 1;
+                                                            accepted => {
+                                                                if msg.text != "" && root.selected-remote != "" {
+                                                                    root.commit-and-push(loc.id, msg.text);
+                                                                    msg.text = "";
+                                                                }
                                                             }
                                                         }
-                                                    }
-                                                }
-
-                                                Rectangle { height: 1px; background: #d98e0433; }
-
-                                                HorizontalLayout {
-                                                    spacing: 8px;
-                                                    msg := LineEdit {
-                                                        placeholder-text: "Commit-Nachricht eingeben… (Enter für Commit & Push)";
-                                                        horizontal-stretch: 1;
-                                                        accepted => {
-                                                            if msg.text != "" && root.selected-remote != "" {
-                                                                root.commit-and-push(loc.id, msg.text);
-                                                                msg.text = "";
-                                                            }
+                                                        Button {
+                                                            text: "Commit";
+                                                            enabled: msg.text != "";
+                                                            clicked => { root.commit(loc.id, msg.text); msg.text = ""; }
                                                         }
-                                                    }
-                                                    Button {
-                                                        text: "Commit";
-                                                        enabled: msg.text != "";
-                                                        clicked => { root.commit(loc.id, msg.text); msg.text = ""; }
-                                                    }
-                                                    Button {
-                                                        text: "Commit & Push 🚀";
-                                                        primary: true;
-                                                        enabled: msg.text != "" && root.selected-remote != "";
-                                                        clicked => { root.commit-and-push(loc.id, msg.text); msg.text = ""; }
+                                                        Button {
+                                                            text: "Commit & Push 🚀";
+                                                            primary: true;
+                                                            enabled: msg.text != "" && root.selected-remote != "";
+                                                            clicked => { root.commit-and-push(loc.id, msg.text); msg.text = ""; }
+                                                        }
                                                     }
                                                 }
                                             }
