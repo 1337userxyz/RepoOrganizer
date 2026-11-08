@@ -53,6 +53,17 @@ export struct TaskRow {
     detail: string,
 }
 
+export struct DirtyFileRow {
+    path: string,
+    status: string,
+    status-code: string,
+    kind: int,
+    mtime-text: string,
+    size-text: string,
+    loc-label: string,
+    loc-id: string,
+}
+
 export struct LocationRow {
     id: string,
     can-pull: bool,
@@ -75,6 +86,7 @@ export struct LocationRow {
     working-tree-kind: int,
     fetched: string,
     pulled: string,
+    last-dirty-time: string,
     other-os: bool,
 }
 
@@ -528,6 +540,9 @@ export component MainWindow inherits Window {
     in property <string> selected-active-loc-name: "";
     in property <int> selected-dirty-count: 0;
     in property <int> selected-ahead-count: 0;
+    in property <[DirtyFileRow]> selected-dirty-files;
+    in property <string> selected-dirty-summary: "";
+    in-out property <bool> show-dirty-files: false;
 
     // Globaler Toolbar-Commit & Push
     in-out property <bool> quick-commit-open: false;
@@ -601,6 +616,8 @@ export component MainWindow inherits Window {
     callback clean-repo-builds(string);
     callback clean-all-builds();
     callback create-in-base-path(string, string);
+    callback open-file(string, string);
+    callback open-file-in-code(string, string);
     in-out property <string> disk-info: "";
 
     property <bool> adding: false;
@@ -1122,7 +1139,7 @@ export component MainWindow inherits Window {
 
             // Unten: Dauerhaft sichtbares Detail-Panel über die volle Breite
             Rectangle {
-                height: 320px;
+                height: 350px;
                 background: #80808012;
                 border-width: 1px;
                 border-color: #80808028;
@@ -1151,10 +1168,21 @@ export component MainWindow inherits Window {
                             overflow: elide;
                         }
                         Button { text: "Standorte (" + root.locations.length + ")"; primary: root.detail-tab == 0; clicked => { root.detail-tab = 0; } }
+                        Button {
+                            text: "Änderungen" + (root.selected-dirty-files.length > 0 ? (" (" + root.selected-dirty-files.length + ")") : "");
+                            primary: root.detail-tab == 5;
+                            clicked => { root.detail-tab = 5; }
+                        }
                         Button { text: "Drift (" + root.drift-rows.length + ")"; primary: root.detail-tab == 1; clicked => { root.detail-tab = 1; } }
                         Button { text: "Health"; primary: root.detail-tab == 2; clicked => { root.detail-tab = 2; } }
                         Button { text: "Statistik"; primary: root.detail-tab == 3; clicked => { root.detail-tab = 3; root.load-stats(root.selected-id, false); } }
                         Button { text: "Meta / Remote"; primary: root.detail-tab == 4; clicked => { root.detail-tab = 4; } }
+                    }
+
+                    // Trennlinie unter Kopfzeile
+                    Rectangle {
+                        height: 1px;
+                        background: #80808028;
                     }
 
                     // Tab 0: Standorte auf voller Breite + Online-Stellen-Leiste bei lokalen Repos
@@ -1372,13 +1400,15 @@ export component MainWindow inherits Window {
                                 spacing: 6px;
                                 alignment: start;
                                 for loc in root.locations: Rectangle {
-                                    background: #80808016;
-                                    border-radius: 6px;
+                                    background: #80808012;
+                                    border-width: 1px;
+                                    border-color: #80808028;
+                                    border-radius: 8px;
                                     opacity: loc.other-os ? 0.5 : 1.0;
                                     VerticalLayout {
                                         padding: 8px;
                                         spacing: 6px;
-                                        // Zeile 1: Standort, Pfad, Status, Öffnen-Buttons & Git-Aktionen
+                                        // Zeile 1: Kopfzeile des Standorts (Badges, Name, Rolle, Branch, Ahead/Behind & Aktions-Buttons)
                                         HorizontalLayout {
                                             spacing: 8px;
                                             Badge { text: loc.status; kind: loc.kind; y: (parent.height - self.height) / 2; }
@@ -1387,93 +1417,220 @@ export component MainWindow inherits Window {
                                                 kind: loc.working-tree-kind;
                                                 y: (parent.height - self.height) / 2;
                                             }
-                                            Text { text: loc.label + " (" + loc.role + ")"; font-weight: 600; vertical-alignment: center; }
-                                            Text { text: loc.path; font-size: 12px; opacity: 0.8; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                                            Text { text: loc.label; font-weight: 700; font-size: 13px; vertical-alignment: center; }
+                                            Badge { text: loc.role; kind: 4; y: (parent.height - self.height) / 2; }
                                             if loc.branch != "": Text {
                                                 text: "⎇ " + loc.branch;
                                                 font-size: 12px;
                                                 font-weight: 600;
                                                 vertical-alignment: center;
                                             }
-                                            if loc.ahead > 0: Text {
-                                                text: "↑" + loc.ahead;
-                                                font-size: 12px;
-                                                font-weight: 600;
-                                                color: #2a7fd4;
-                                                vertical-alignment: center;
+                                            if loc.ahead > 0: Badge {
+                                                text: "↑ " + loc.ahead;
+                                                kind: 1;
+                                                y: (parent.height - self.height) / 2;
                                             }
-                                            if loc.behind > 0: Text {
-                                                text: "↓" + loc.behind;
-                                                font-size: 12px;
-                                                font-weight: 600;
-                                                color: #d98e04;
-                                                vertical-alignment: center;
+                                            if loc.behind > 0: Badge {
+                                                text: "↓ " + loc.behind;
+                                                kind: 2;
+                                                y: (parent.height - self.height) / 2;
                                             }
-                                            Text { text: "Fetch: " + loc.fetched + " · Pull: " + loc.pulled + (loc.build-size != "-" && loc.build-size != "–" ? " · Build: " + loc.build-size : ""); font-size: 11px; opacity: 0.65; vertical-alignment: center; }
+                                            Rectangle { horizontal-stretch: 1; }
+
                                             if loc.other-os || loc.kind == 4: Button {
                                                 text: "📥 Klonen";
                                                 primary: true;
                                                 enabled: root.selected-remote != "";
                                                 clicked => { root.clone-offline-location(loc.id); }
                                             }
-                                            Button { text: "Fetch"; enabled: !loc.other-os && loc.kind != 4 && root.selected-remote != ""; clicked => { root.location-action(loc.id, "fetch"); } }
-                                            Button { text: loc.behind > 0 ? ("Pull (" + loc.behind + ") ↓") : "Pull"; enabled: loc.can-pull && root.selected-remote != ""; clicked => { root.location-action(loc.id, "pull"); } }
-                                            Button { text: loc.ahead > 0 ? ("Push (" + loc.ahead + ") ↑") : "Push"; primary: loc.ahead > 0 && loc.dirty == 0; enabled: loc.can-push && root.selected-remote != ""; clicked => { root.location-action(loc.id, "push"); } }
-                                            Button { text: "Stash"; enabled: loc.can-commit; clicked => { root.location-action(loc.id, "stash"); } }
-                                            if loc.stashes > 0: Button { text: "Pop (" + loc.stashes + ")"; clicked => { root.location-action(loc.id, "stash_pop"); } }
-                                            if loc.can-clean: Button { text: "Clean (" + loc.build-size + ")"; clicked => { root.location-action(loc.id, "clean"); } }
-                                            Button { text: "Explorer"; enabled: !loc.other-os; clicked => { root.open-in(loc.id, "explorer"); } }
-                                            Button { text: "Terminal"; enabled: !loc.other-os; clicked => { root.open-in(loc.id, "terminal"); } }
-                                            Button { text: "VS Code"; enabled: !loc.other-os; clicked => { root.open-in(loc.id, "code"); } }
-                                            Button { text: "×"; clicked => { root.delete-location(loc.id); } }
+                                            if !loc.other-os && loc.kind != 4: HorizontalLayout {
+                                                spacing: 4px;
+                                                Button { text: "Fetch"; enabled: root.selected-remote != ""; clicked => { root.location-action(loc.id, "fetch"); } }
+                                                Button { text: loc.behind > 0 ? ("Pull (" + loc.behind + ") ↓") : "Pull"; primary: loc.behind > 0; enabled: loc.can-pull && root.selected-remote != ""; clicked => { root.location-action(loc.id, "pull"); } }
+                                                Button { text: loc.ahead > 0 ? ("Push (" + loc.ahead + ") ↑") : "Push"; primary: loc.ahead > 0 && loc.dirty == 0; enabled: loc.can-push && root.selected-remote != ""; clicked => { root.location-action(loc.id, "push"); } }
+                                                Button { text: "Stash"; enabled: loc.can-commit; clicked => { root.location-action(loc.id, "stash"); } }
+                                                if loc.stashes > 0: Button { text: "Pop (" + loc.stashes + ")"; clicked => { root.location-action(loc.id, "stash_pop"); } }
+                                                Rectangle { width: 1px; height: 18px; background: #80808033; y: (parent.height - self.height) / 2; }
+                                                Button { text: "Explorer"; clicked => { root.open-in(loc.id, "explorer"); } }
+                                                Button { text: "Terminal"; clicked => { root.open-in(loc.id, "terminal"); } }
+                                                Button { text: "VS Code"; clicked => { root.open-in(loc.id, "code"); } }
+                                                Rectangle { width: 1px; height: 18px; background: #80808033; y: (parent.height - self.height) / 2; }
+                                                if loc.can-clean: Button { text: "Clean (" + loc.build-size + ")"; clicked => { root.location-action(loc.id, "clean"); } }
+                                                Button { text: "×"; clicked => { root.delete-location(loc.id); } }
+                                            }
                                         }
-                                        // Zeile 2 (nur bei Fehler): Vollständige Meldung + Direkt-Behebung
-                                        if loc.error-msg != "": HorizontalLayout {
+
+                                        // Trennlinie vor Pfad & Sync-Zeiten
+                                        Rectangle { height: 1px; background: #80808018; }
+
+                                        // Zeile 2: Pfad & Synchronisations-Zeiten
+                                        HorizontalLayout {
                                             spacing: 10px;
-                                            Text {
-                                                text: loc.error-msg;
-                                                font-size: 11px;
-                                                color: #e04347;
-                                                wrap: word-wrap;
-                                                horizontal-stretch: 1;
-                                                vertical-alignment: center;
-                                            }
-                                            Button {
-                                                text: "Als sicher zulassen (safe.directory)";
-                                                clicked => { root.location-action(loc.id, "trust"); }
-                                            }
-                                            Button {
-                                                text: "Besitz übernehmen (Ownership)";
-                                                clicked => { root.location-action(loc.id, "take_ownership"); }
+                                            Text { text: "📁 " + loc.path; font-size: 12px; opacity: 0.85; horizontal-stretch: 1; overflow: elide; vertical-alignment: center; }
+                                            Text { text: "Fetch: " + loc.fetched + " · Pull: " + loc.pulled + (loc.build-size != "-" && loc.build-size != "–" ? " · Build: " + loc.build-size : ""); font-size: 11px; opacity: 0.65; vertical-alignment: center; }
+                                        }
+
+                                        // Zeile 3 (nur bei Fehler): Vollständige Meldung + Direkt-Behebung
+                                        if loc.error-msg != "": Rectangle {
+                                            background: #e0434718;
+                                            border-width: 1px;
+                                            border-color: #e0434755;
+                                            border-radius: 6px;
+                                            HorizontalLayout {
+                                                padding: 6px;
+                                                spacing: 10px;
+                                                Text {
+                                                    text: "⚠ " + loc.error-msg;
+                                                    font-size: 11px;
+                                                    color: #e04347;
+                                                    wrap: word-wrap;
+                                                    horizontal-stretch: 1;
+                                                    vertical-alignment: center;
+                                                }
+                                                Button {
+                                                    text: "Als sicher zulassen (safe.directory)";
+                                                    clicked => { root.location-action(loc.id, "trust"); }
+                                                }
+                                                Button {
+                                                    text: "Besitz übernehmen (Ownership)";
+                                                    clicked => { root.location-action(loc.id, "take_ownership"); }
+                                                }
                                             }
                                         }
-                                        // Zeile 3 (nur wenn uncommittete Änderungen vorliegen): Commit & Schnell-Push
-                                        if loc.can-commit: HorizontalLayout {
-                                            spacing: 8px;
-                                            Text {
-                                                text: "✎ Arbeitskopie (" + loc.dirty + " uncommittete Datei" + (loc.dirty == 1 ? "" : "en") + "):";
-                                                font-size: 12px;
-                                                font-weight: 600;
-                                                color: #d98e04;
-                                                vertical-alignment: center;
-                                            }
-                                            msg := LineEdit { placeholder-text: "Commit-Nachricht eingeben…"; horizontal-stretch: 1; }
-                                            Button {
-                                                text: "Commit";
-                                                enabled: msg.text != "";
-                                                clicked => { root.commit(loc.id, msg.text); msg.text = ""; }
-                                            }
-                                            Button {
-                                                text: "Commit & Push";
-                                                primary: true;
-                                                enabled: msg.text != "" && root.selected-remote != "";
-                                                clicked => { root.commit-and-push(loc.id, msg.text); msg.text = ""; }
+
+                                        // Zeile 4 (nur wenn uncommittete Änderungen vorliegen): Strukturierter Arbeitskopie-Bereich
+                                        if loc.can-commit: Rectangle {
+                                            background: #d98e0412;
+                                            border-width: 1px;
+                                            border-color: #d98e0455;
+                                            border-radius: 6px;
+                                            VerticalLayout {
+                                                padding: 8px;
+                                                spacing: 6px;
+                                                HorizontalLayout {
+                                                    spacing: 8px;
+                                                    Text {
+                                                        text: "✎ Arbeitskopie (" + loc.dirty + " uncommittete Datei" + (loc.dirty == 1 ? "" : "en") + "):";
+                                                        font-size: 12px;
+                                                        font-weight: 700;
+                                                        color: #d98e04;
+                                                        vertical-alignment: center;
+                                                    }
+                                                    if loc.last-dirty-time != "": Text {
+                                                        text: "· Letzte Änderung: " + loc.last-dirty-time;
+                                                        font-size: 11px;
+                                                        opacity: 0.85;
+                                                        vertical-alignment: center;
+                                                    }
+                                                    Rectangle { horizontal-stretch: 1; }
+                                                    Button {
+                                                        text: root.show-dirty-files ? "Dateien verbergen ▲" : ("Dateien anzeigen (" + root.selected-dirty-files.length + ") ▼");
+                                                        clicked => { root.show-dirty-files = !root.show-dirty-files; }
+                                                    }
+                                                    Button {
+                                                        text: "Detail-Tabelle →";
+                                                        clicked => { root.detail-tab = 5; }
+                                                    }
+                                                }
+
+                                                // Ausklappbare Dateiliste
+                                                if root.show-dirty-files && root.selected-dirty-files.length > 0: VerticalLayout {
+                                                    spacing: 3px;
+                                                    Rectangle { height: 1px; background: #d98e0433; }
+                                                    for file in root.selected-dirty-files: Rectangle {
+                                                        height: 26px;
+                                                        background: #8080800c;
+                                                        border-radius: 4px;
+                                                        HorizontalLayout {
+                                                            padding-left: 6px;
+                                                            padding-right: 6px;
+                                                            spacing: 8px;
+                                                            Badge {
+                                                                text: file.status-code;
+                                                                kind: file.kind;
+                                                                y: (parent.height - self.height) / 2;
+                                                            }
+                                                            Text {
+                                                                text: file.status;
+                                                                font-size: 11px;
+                                                                font-weight: 600;
+                                                                color: Kinds.kind-color(file.kind);
+                                                                vertical-alignment: center;
+                                                                width: 120px;
+                                                            }
+                                                            Text {
+                                                                text: file.path;
+                                                                font-size: 11px;
+                                                                horizontal-stretch: 1;
+                                                                overflow: elide;
+                                                                vertical-alignment: center;
+                                                            }
+                                                            if file.size-text != "": Text {
+                                                                text: file.size-text;
+                                                                font-size: 11px;
+                                                                opacity: 0.7;
+                                                                width: 60px;
+                                                                horizontal-alignment: right;
+                                                                vertical-alignment: center;
+                                                            }
+                                                            Text {
+                                                                text: file.mtime-text;
+                                                                font-size: 11px;
+                                                                opacity: 0.8;
+                                                                width: 180px;
+                                                                vertical-alignment: center;
+                                                            }
+                                                            Button {
+                                                                text: "Öffnen";
+                                                                clicked => { root.open-file(file.loc-id, file.path); }
+                                                            }
+                                                            Button {
+                                                                text: "Code";
+                                                                clicked => { root.open-file-in-code(file.loc-id, file.path); }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                Rectangle { height: 1px; background: #d98e0433; }
+
+                                                HorizontalLayout {
+                                                    spacing: 8px;
+                                                    msg := LineEdit {
+                                                        placeholder-text: "Commit-Nachricht eingeben… (Enter für Commit & Push)";
+                                                        horizontal-stretch: 1;
+                                                        accepted => {
+                                                            if msg.text != "" && root.selected-remote != "" {
+                                                                root.commit-and-push(loc.id, msg.text);
+                                                                msg.text = "";
+                                                            }
+                                                        }
+                                                    }
+                                                    Button {
+                                                        text: "Commit";
+                                                        enabled: msg.text != "";
+                                                        clicked => { root.commit(loc.id, msg.text); msg.text = ""; }
+                                                    }
+                                                    Button {
+                                                        text: "Commit & Push 🚀";
+                                                        primary: true;
+                                                        enabled: msg.text != "" && root.selected-remote != "";
+                                                        clicked => { root.commit-and-push(loc.id, msg.text); msg.text = ""; }
+                                                    }
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
                         }
+
+                        // Trennlinie vor Standort-Hinzufügen-Leiste
+                        if root.selected-id != "": Rectangle {
+                            height: 1px;
+                            background: #80808028;
+                        }
+
                         if root.selected-id != "": HorizontalLayout {
                             spacing: 6px;
                             LineEdit {
@@ -1614,6 +1771,184 @@ export component MainWindow inherits Window {
                                 text: "Repo entfernen";
                                 enabled: root.selected-id != "";
                                 clicked => { root.delete-repo(root.selected-id); }
+                            }
+                        }
+                    }
+
+                    // Tab 5: Uncommittete Änderungen (Dateien, Status, letzte Änderung, Aktionen)
+                    if root.detail-tab == 5: VerticalLayout {
+                        spacing: 8px;
+                        vertical-stretch: 1;
+
+                        // Zusammenfassungs- und Schnell-Commit-Banner
+                        Rectangle {
+                            background: root.selected-dirty-files.length > 0 ? #d98e0414 : #2e9e5b14;
+                            border-width: 1px;
+                            border-color: root.selected-dirty-files.length > 0 ? #d98e0455 : #2e9e5b55;
+                            border-radius: 6px;
+                            VerticalLayout {
+                                padding: 8px;
+                                spacing: 6px;
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    Text {
+                                        text: root.selected-dirty-files.length == 0 ? "✓ Arbeitsverzeichnis ist sauber (keine uncommitteten Änderungen)" : ("✎ " + root.selected-dirty-files.length + " uncommittete Datei" + (root.selected-dirty-files.length == 1 ? "" : "en") + " in " + root.selected-name);
+                                        font-size: 13px;
+                                        font-weight: 700;
+                                        color: root.selected-dirty-files.length == 0 ? #2e9e5b : #d98e04;
+                                        vertical-alignment: center;
+                                    }
+                                    if root.selected-dirty-summary != "": Text {
+                                        text: "· " + root.selected-dirty-summary;
+                                        font-size: 11px;
+                                        opacity: 0.85;
+                                        vertical-alignment: center;
+                                        horizontal-stretch: 1;
+                                        overflow: elide;
+                                    }
+                                }
+
+                                if root.selected-dirty-files.length > 0 && root.selected-active-loc-id != "": HorizontalLayout {
+                                    spacing: 8px;
+                                    tab5-msg := LineEdit {
+                                        placeholder-text: "Commit-Nachricht eingeben… (Enter für Commit & Push)";
+                                        horizontal-stretch: 1;
+                                        accepted => {
+                                            if tab5-msg.text != "" && root.selected-remote != "" {
+                                                root.commit-and-push(root.selected-active-loc-id, tab5-msg.text);
+                                                tab5-msg.text = "";
+                                            }
+                                        }
+                                    }
+                                    Button {
+                                        text: "Commit & Push 🚀";
+                                        primary: true;
+                                        enabled: tab5-msg.text != "" && root.selected-remote != "";
+                                        clicked => {
+                                            root.commit-and-push(root.selected-active-loc-id, tab5-msg.text);
+                                            tab5-msg.text = "";
+                                        }
+                                    }
+                                    Button {
+                                        text: "Nur Commit";
+                                        enabled: tab5-msg.text != "";
+                                        clicked => {
+                                            root.commit(root.selected-active-loc-id, tab5-msg.text);
+                                            tab5-msg.text = "";
+                                        }
+                                    }
+                                    Button {
+                                        text: "Stash";
+                                        clicked => { root.location-action(root.selected-active-loc-id, "stash"); }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Dateitabelle
+                        if root.selected-dirty-files.length > 0: Rectangle {
+                            vertical-stretch: 1;
+                            border-width: 1px;
+                            border-color: #80808028;
+                            border-radius: 6px;
+                            background: #80808008;
+                            clip: true;
+
+                            VerticalLayout {
+                                // Tabellenkopf
+                                Rectangle {
+                                    height: 28px;
+                                    background: #80808018;
+                                    HorizontalLayout {
+                                        padding-left: 10px;
+                                        padding-right: 10px;
+                                        spacing: 8px;
+                                        Text { text: "Status"; font-size: 11px; font-weight: 700; width: 140px; vertical-alignment: center; }
+                                        Text { text: "Dateipfad"; font-size: 11px; font-weight: 700; horizontal-stretch: 1; vertical-alignment: center; }
+                                        Text { text: "Standort"; font-size: 11px; font-weight: 700; width: 110px; vertical-alignment: center; }
+                                        Text { text: "Größe"; font-size: 11px; font-weight: 700; width: 75px; horizontal-alignment: right; vertical-alignment: center; }
+                                        Text { text: "Letzte Änderungszeit"; font-size: 11px; font-weight: 700; width: 220px; vertical-alignment: center; }
+                                        Text { text: "Aktion"; font-size: 11px; font-weight: 700; width: 120px; horizontal-alignment: center; vertical-alignment: center; }
+                                    }
+                                }
+
+                                Rectangle { height: 1px; background: #80808024; }
+
+                                // Dateiliste
+                                ScrollView {
+                                    vertical-stretch: 1;
+                                    VerticalLayout {
+                                        alignment: start;
+                                        for file in root.selected-dirty-files: Rectangle {
+                                            height: 30px;
+                                            background: #80808006;
+                                            HorizontalLayout {
+                                                padding-left: 10px;
+                                                padding-right: 10px;
+                                                spacing: 8px;
+                                                HorizontalLayout {
+                                                    width: 140px;
+                                                    spacing: 6px;
+                                                    Badge {
+                                                        text: file.status-code;
+                                                        kind: file.kind;
+                                                        y: (parent.height - self.height) / 2;
+                                                    }
+                                                    Text {
+                                                        text: file.status;
+                                                        font-size: 11px;
+                                                        font-weight: 600;
+                                                        color: Kinds.kind-color(file.kind);
+                                                        vertical-alignment: center;
+                                                    }
+                                                }
+                                                Text {
+                                                    text: file.path;
+                                                    font-size: 12px;
+                                                    horizontal-stretch: 1;
+                                                    overflow: elide;
+                                                    vertical-alignment: center;
+                                                }
+                                                Text {
+                                                    text: file.loc-label;
+                                                    font-size: 11px;
+                                                    opacity: 0.7;
+                                                    width: 110px;
+                                                    overflow: elide;
+                                                    vertical-alignment: center;
+                                                }
+                                                Text {
+                                                    text: file.size-text;
+                                                    font-size: 11px;
+                                                    opacity: 0.7;
+                                                    width: 75px;
+                                                    horizontal-alignment: right;
+                                                    vertical-alignment: center;
+                                                }
+                                                Text {
+                                                    text: file.mtime-text;
+                                                    font-size: 12px;
+                                                    opacity: 0.85;
+                                                    width: 220px;
+                                                    vertical-alignment: center;
+                                                }
+                                                HorizontalLayout {
+                                                    width: 120px;
+                                                    spacing: 4px;
+                                                    alignment: center;
+                                                    Button {
+                                                        text: "Öffnen";
+                                                        clicked => { root.open-file(file.loc-id, file.path); }
+                                                    }
+                                                    Button {
+                                                        text: "Code";
+                                                        clicked => { root.open-file-in-code(file.loc-id, file.path); }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

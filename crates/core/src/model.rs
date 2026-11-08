@@ -96,6 +96,19 @@ pub struct Snapshot {
     pub stash_count: u32,
     pub head_sha: Option<String>,
     pub state: Status,
+    #[serde(default)]
+    pub dirty_details: Vec<DirtyFile>,
+}
+
+/// Einzelne uncommittete Datei mit Pfad, Status und letzter Änderungszeit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DirtyFile {
+    pub path: String,
+    pub status: String,
+    pub status_code: String,
+    pub kind: i32,
+    pub mtime: Option<i64>,
+    pub size_bytes: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -132,6 +145,7 @@ impl Snapshot {
             stash_count: 0,
             head_sha: None,
             state,
+            dirty_details: Vec::new(),
         }
     }
 }

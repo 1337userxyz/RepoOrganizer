@@ -79,6 +79,14 @@ impl CliGit {
         self.run(repo, &["ls-files"]).map(|s| s.lines().count() as u32).unwrap_or(0)
     }
 
+    /// Liefert alle uncommitteten/untracked/geänderten Dateien mit Status und letzter Änderungszeit.
+    pub fn dirty_files(&self, repo: &Path) -> Vec<repoorganizer_core::model::DirtyFile> {
+        let Ok(out) = self.run(repo, &["status", "--porcelain=v1", "-u"]) else {
+            return Vec::new();
+        };
+        parse::parse_porcelain_dirty(&out, repo)
+    }
+
     /// Zeitpunkt des letzten Pulls aus dem Reflog von HEAD (Eintrag `pull`).
     pub fn last_pull(&self, repo: &Path) -> Option<i64> {
         let out = self.run(repo, &["reflog", "show", "--date=unix", "--format=%gd|%gs", "HEAD"]).ok()?;
@@ -384,6 +392,7 @@ impl GitBackend for CliGit {
             stash_count: 0,
             head_sha: None,
             state: Status::Unavailable,
+            dirty_details: Vec::new(),
         };
         if !repo.is_dir() {
             return snap;
@@ -404,6 +413,9 @@ impl GitBackend for CliGit {
                 snap.behind = s.behind;
                 snap.dirty_files = s.changed;
                 snap.untracked = s.untracked;
+                if snap.dirty_files + snap.untracked > 0 {
+                    snap.dirty_details = self.dirty_files(repo);
+                }
                 snap.stash_count = self.stash_count(repo);
                 snap.last_fetch = self.last_fetch(repo);
                 snap.last_pull = self.last_pull(repo);

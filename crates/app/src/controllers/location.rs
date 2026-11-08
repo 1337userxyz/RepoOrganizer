@@ -146,6 +146,30 @@ pub fn register(ui: &MainWindow, state: &Shared) {
         });
     }
     {
+        let state = state.clone();
+        ui.on_open_file(move |loc: SharedString, file_path: SharedString| {
+            let st = state.lock().unwrap();
+            if let Some(l) = st.shared.locations.iter().find(|l| l.id == loc.as_str()) {
+                if let Resolved::Local(p) = resolved(&st, l) {
+                    let full = p.join(file_path.as_str());
+                    let _ = kit_launcher::open_path(&full);
+                }
+            }
+        });
+    }
+    {
+        let state = state.clone();
+        ui.on_open_file_in_code(move |loc: SharedString, file_path: SharedString| {
+            let st = state.lock().unwrap();
+            if let Some(l) = st.shared.locations.iter().find(|l| l.id == loc.as_str()) {
+                if let Resolved::Local(p) = resolved(&st, l) {
+                    let full = p.join(file_path.as_str());
+                    let _ = kit_launcher::open_in_editor(&full, Some("code"));
+                }
+            }
+        });
+    }
+    {
         let (weak, state) = (ui.as_weak(), state.clone());
         ui.on_delete_location(move |loc: SharedString| {
             if let Some(ui) = weak.upgrade() {

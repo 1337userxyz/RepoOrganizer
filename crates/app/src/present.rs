@@ -176,6 +176,48 @@ pub fn format_commit_date(ts: Option<i64>, now: i64) -> String {
     format!("{d:02}.{m:02}.{y:04} ({})", ago(Some(ts), now))
 }
 
+/// Formatiert eine Datei-Änderungszeit mit Uhrzeit (und Datum bei älteren Änderungen) plus relativer Zeit.
+pub fn format_mtime(ts: Option<i64>, now: i64) -> String {
+    let Some(ts) = ts else { return "–".into() };
+    let rel = ago(Some(ts), now);
+    let day_secs = ts.rem_euclid(86400);
+    let hour = day_secs / 3600;
+    let min = (day_secs % 3600) / 60;
+    let sec = day_secs % 60;
+    let now_days = now.div_euclid(86400);
+    let ts_days = ts.div_euclid(86400);
+    if now_days == ts_days {
+        format!("{hour:02}:{min:02}:{sec:02} ({rel})")
+    } else {
+        let (y, m, d) = civil_from_days(ts_days);
+        format!("{d:02}.{m:02}.{y:04} {hour:02}:{min:02} ({rel})")
+    }
+}
+
+pub fn format_file_size(bytes: Option<u64>) -> String {
+    let Some(b) = bytes else { return "–".into() };
+    if b < 1024 {
+        format!("{b} B")
+    } else if b < 1024 * 1024 {
+        format!("{:.1} KB", b as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", b as f64 / (1024.0 * 1024.0))
+    }
+}
+
+#[allow(dead_code)]
+pub fn dirty_summary(files: &[repoorganizer_core::model::DirtyFile], now: i64) -> String {
+    if files.is_empty() {
+        return "Keine uncommitteten Änderungen".into();
+    }
+    let newest = files.iter().filter_map(|f| f.mtime).max();
+    if let Some(t) = newest {
+        format!("Letzte Änderung: {}", format_mtime(Some(t), now))
+    } else {
+        format!("{} uncommittete Datei(en)", files.len())
+    }
+}
+
 pub fn format_size_kb(kb: u64) -> String {
     if kb == 0 {
         "–".into()
@@ -299,6 +341,21 @@ mod tests {
         assert_eq!(build_size_kind(0), 0); // 0 B -> sauber
         assert_eq!(build_size_kind(50 * 1024 * 1024), 1); // 50 MB -> orange
         assert_eq!(build_size_kind(1200 * 1024 * 1024), 2); // 1.2 GB -> rot
+    }
+
+    #[test]
+    fn format_mtime_and_sizes() {
+        assert_eq!(format_mtime(None, 100), "–");
+        // Gleicher Tag
+        let now = 100_000;
+        let ts = 99_900;
+        let s = format_mtime(Some(ts), now);
+        assert!(s.contains("vor"));
+
+        assert_eq!(format_file_size(None), "–");
+        assert_eq!(format_file_size(Some(500)), "500 B");
+        assert_eq!(format_file_size(Some(2048)), "2.0 KB");
+        assert_eq!(format_file_size(Some(5 * 1024 * 1024)), "5.0 MB");
     }
 }
 

@@ -291,3 +291,32 @@ fn activity_from_real_repo() {
     assert!(g.git_size(tmp.path()) > 0);
     assert!(g.collect_activity(tmp.path().join("nope").as_path(), 30).is_empty());
 }
+
+#[test]
+fn dirty_porcelain_parsing() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("mod.rs"), "fn hello() {}").unwrap();
+    std::fs::write(tmp.path().join("new.txt"), "fresh").unwrap();
+
+    let fake_out = " M mod.rs\n?? new.txt\n D deleted.txt\nA  staged.rs\n";
+    let files = parse::parse_porcelain_dirty(fake_out, tmp.path());
+    assert_eq!(files.len(), 4);
+
+    let m = files.iter().find(|f| f.path == "mod.rs").unwrap();
+    assert_eq!(m.status_code, "M");
+    assert_eq!(m.status, "Geändert");
+    assert_eq!(m.kind, 2);
+    assert!(m.mtime.is_some());
+    assert!(m.size_bytes.is_some());
+
+    let u = files.iter().find(|f| f.path == "new.txt").unwrap();
+    assert_eq!(u.status_code, "?");
+    assert_eq!(u.status, "Neu (untracked)");
+    assert_eq!(u.kind, 1);
+
+    let d = files.iter().find(|f| f.path == "deleted.txt").unwrap();
+    assert_eq!(d.status_code, "D");
+    assert_eq!(d.status, "Gelöscht");
+    assert_eq!(d.kind, 3);
+    assert!(d.mtime.is_none());
+}

@@ -11,7 +11,7 @@ use slint::{ModelRc, SharedString, VecModel};
 
 use crate::state::*;
 use crate::{
-    present, CheckRow, HeatItem, InfoRow, LocationRow, MainWindow, MappingRow,
+    present, CheckRow, DirtyFileRow, HeatItem, InfoRow, LocationRow, MainWindow, MappingRow,
     MissingBasePathRow, RepoRow, ScanRow, SettingsWindow, TaskRow, ViewRow,
 };
 
@@ -455,6 +455,11 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
                 }
             }
 
+            let last_dirty_time = snap
+                .and_then(|s| s.dirty_details.iter().filter_map(|d| d.mtime).max())
+                .map(|m| present::format_mtime(Some(m), t))
+                .unwrap_or_else(|| if dirty > 0 { "vor kurzem".into() } else { "".into() });
+
             locs.push(LocationRow {
                 id: l.id.as_str().into(),
                 can_pull,
@@ -477,9 +482,57 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
                 working_tree_kind: present::working_tree_kind(dirty),
                 fetched: present::ago(snap.and_then(|s| s.last_fetch), t).into(),
                 pulled: present::ago(snap.and_then(|s| s.last_pull), t).into(),
+                last_dirty_time: last_dirty_time.into(),
                 other_os,
             });
         }
+
+        let mut dirty_rows: Vec<DirtyFileRow> = Vec::new();
+        for l in st.shared.locations_of(&r.id) {
+            let loc_lbl = if l.label.is_empty() { l.id.clone() } else { l.label.clone() };
+            let snap = st.snaps.get(&l.id);
+            let dirty = snap.map(|s| s.dirty_files + s.untracked).unwrap_or(0);
+            if dirty > 0 {
+                let details = if let Some(s) = snap.filter(|s| !s.dirty_details.is_empty()) {
+                    s.dirty_details.clone()
+                } else if let Resolved::Local(p) = resolved(st, l) {
+                    let git = repoorganizer_git::CliGit::new(st.local.git_path.as_deref());
+                    let fresh = git.dirty_files(&p);
+                    if let Some(s_mut) = st.snaps.get_mut(&l.id) {
+                        s_mut.dirty_details = fresh.clone();
+                    }
+                    fresh
+                } else {
+                    Vec::new()
+                };
+
+                for df in details {
+                    dirty_rows.push(DirtyFileRow {
+                        path: df.path.as_str().into(),
+                        status: df.status.as_str().into(),
+                        status_code: df.status_code.as_str().into(),
+                        kind: df.kind,
+                        mtime_text: present::format_mtime(df.mtime, t).into(),
+                        size_text: present::format_file_size(df.size_bytes).into(),
+                        loc_label: loc_lbl.as_str().into(),
+                        loc_id: l.id.as_str().into(),
+                    });
+                }
+            }
+        }
+
+        let dirty_summary = if !dirty_rows.is_empty() {
+            let all_details: Vec<_> = st.shared.locations_of(&r.id)
+                .filter_map(|l| st.snaps.get(&l.id))
+                .flat_map(|s| s.dirty_details.iter().cloned())
+                .collect();
+            present::dirty_summary(&all_details, t)
+        } else {
+            "".into()
+        };
+
+        ui.set_selected_dirty_files(dirty_rows.to_slint_model());
+        ui.set_selected_dirty_summary(dirty_summary.into());
 
         if let Some((loc_id, name, dirty_count)) = best_dirty_loc {
             ui.set_selected_active_loc_id(loc_id.into());
@@ -610,6 +663,8 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
         ui.set_selected_favorite(false);
         ui.set_selected_is_offline(false);
         ui.set_selected_suggested_dest("".into());
+        ui.set_selected_dirty_files(ModelRc::default());
+        ui.set_selected_dirty_summary("".into());
     }
     ui.set_locations(ModelRc::new(VecModel::from(locs)));
     let disk_msg = st.shared.locations.iter()

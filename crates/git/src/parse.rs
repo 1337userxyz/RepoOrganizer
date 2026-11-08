@@ -83,3 +83,79 @@ pub fn parse_log_numstat(out: &str) -> Vec<repoorganizer_core::stats::CommitInfo
     }
     res
 }
+
+use repoorganizer_core::model::DirtyFile;
+use std::path::Path;
+use std::time::UNIX_EPOCH;
+
+/// Parsed `git status --porcelain=v1 -u` und ermittelt Dateipfade, Status und mtime/Größe.
+pub fn parse_porcelain_dirty(out: &str, repo: &Path) -> Vec<DirtyFile> {
+    let mut res = Vec::new();
+    for line in out.lines() {
+        if line.len() < 4 {
+            continue;
+        }
+        let xy = &line[0..2];
+        let raw_path = &line[3..];
+        let p_clean = raw_path.trim_matches('"');
+        let target_path = if let Some(dest) = p_clean.rsplit(" -> ").next() {
+            dest.trim_matches('"')
+        } else {
+            p_clean
+        };
+        if target_path.is_empty() {
+            continue;
+        }
+
+        let (status, status_code, kind) = classify_dirty_status(xy);
+        let full = repo.join(target_path);
+        let (mtime, size_bytes) = if let Ok(meta) = std::fs::metadata(&full) {
+            let mt = meta.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_secs() as i64);
+            (mt, Some(meta.len()))
+        } else {
+            (None, None)
+        };
+
+        res.push(DirtyFile {
+            path: target_path.to_string(),
+            status,
+            status_code,
+            kind,
+            mtime,
+            size_bytes,
+        });
+    }
+
+    // Sortierung: Neueste Änderungen zuerst; falls kein mtime (z. B. gelöscht), alphabetisch
+    res.sort_by(|a, b| {
+        match (b.mtime, a.mtime) {
+            (Some(tb), Some(ta)) if tb != ta => tb.cmp(&ta),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            _ => a.path.cmp(&b.path),
+        }
+    });
+
+    res
+}
+
+pub fn classify_dirty_status(xy: &str) -> (String, String, i32) {
+    if xy.starts_with("??") {
+        ("Neu (untracked)".into(), "?".into(), 1)
+    } else if xy.contains('U') || xy == "AA" || xy == "DD" {
+        ("Konflikt".into(), "U".into(), 3)
+    } else if xy.contains('D') {
+        ("Gelöscht".into(), "D".into(), 3)
+    } else if xy.starts_with('A') {
+        ("Neu (staged)".into(), "A".into(), 0)
+    } else if xy.starts_with('R') {
+        ("Umbenannt".into(), "R".into(), 1)
+    } else if xy.starts_with('M') && xy.ends_with(' ') {
+        ("Geändert (staged)".into(), "M".into(), 0)
+    } else if xy.contains('M') {
+        ("Geändert".into(), "M".into(), 2)
+    } else {
+        let code = xy.trim().chars().next().map(|c| c.to_string()).unwrap_or_else(|| "M".into());
+        (format!("Offen ({})", xy.trim()), code, 2)
+    }
+}
