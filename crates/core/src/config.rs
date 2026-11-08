@@ -166,7 +166,7 @@ impl Default for LocalConfig {
 impl LocalConfig {
     /// `local.toml` im OS-Config-Verzeichnis (Bootstrap).
     pub fn default_path() -> Option<PathBuf> {
-        directories::ProjectDirs::from("", "", "RepoOrganizer").map(|d| d.config_dir().join("local.toml"))
+        kit_paths::appdirs::config_dir("RepoOrganizer").map(|d| d.join("local.toml"))
     }
 
     /// Fehlt die Datei, werden Defaults geliefert.

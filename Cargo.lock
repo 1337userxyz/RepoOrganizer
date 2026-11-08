@@ -2417,6 +2417,52 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 
 [[package]]
+name = "kit-appdirs"
+version = "0.1.0"
+dependencies = [
+ "directories",
+]
+
+[[package]]
+name = "kit-launcher"
+version = "0.1.0"
+dependencies = [
+ "kit-paths",
+]
+
+[[package]]
+name = "kit-logging"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log",
+]
+
+[[package]]
+name = "kit-paths"
+version = "0.1.0"
+dependencies = [
+ "kit-appdirs",
+ "serde",
+]
+
+[[package]]
+name = "kit-picker"
+version = "0.1.0"
+dependencies = [
+ "kit-paths",
+ "rfd",
+ "slint",
+]
+
+[[package]]
+name = "kit-slint"
+version = "0.1.0"
+dependencies = [
+ "slint",
+]
+
+[[package]]
 name = "ksni"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3705,6 +3751,10 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 name = "repoorganizer"
 version = "0.1.0"
 dependencies = [
+ "kit-launcher",
+ "kit-logging",
+ "kit-picker",
+ "kit-slint",
  "log",
  "repoorganizer-core",
  "repoorganizer-git",
@@ -3717,7 +3767,7 @@ dependencies = [
 name = "repoorganizer-core"
 version = "0.1.0"
 dependencies = [
- "directories",
+ "kit-paths",
  "serde",
  "serde_json",
  "tempfile",

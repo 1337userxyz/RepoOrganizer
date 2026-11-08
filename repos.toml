@@ -53,6 +53,11 @@ id = "startrekcomputer"
 name = "StarTrekComputer"
 remote_url = "https://github.com/1337userxyz/StarTrekComputer.git"
 
+[[repo]]
+id = "slint-desktop-kit"
+name = "slint-desktop-kit"
+remote_url = "https://github.com/1337userxyz/slint-desktop-kit.git"
+
 [[location]]
 id = "configurable-csv-analyzer-rust-1"
 repo_id = "configurable-csv-analyzer-rust"
@@ -225,3 +230,14 @@ role = "backup"
 
 [location.paths]
 linux = "/home/tristan/Projekte/StarTrekComputer"
+
+[[location]]
+id = "slint-desktop-kit-1"
+repo_id = "slint-desktop-kit"
+label = "slint-desktop-kit"
+role = "primary"
+
+[location.paths]
+windows = 'R:\git\slint-desktop-kit'
+linux = "/r/git/slint-desktop-kit"
+macos = "/r/git/slint-desktop-kit"
