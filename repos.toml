@@ -26,6 +26,7 @@ remote_url = "https://github.com/1337userxyz/GpoManagerMVVMGui.git"
 [[repo]]
 id = "local-agent-studio"
 name = "local-agent-studio"
+remote_url = "https://github.com/1337userxyz/local-agent-studio.git"
 
 [[repo]]
 id = "networkdrivemanager"
