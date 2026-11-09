@@ -24,6 +24,10 @@ name = "GpoManagerMVVMGui"
 remote_url = "https://github.com/1337userxyz/GpoManagerMVVMGui.git"
 
 [[repo]]
+id = "local-agent-studio"
+name = "local-agent-studio"
+
+[[repo]]
 id = "networkdrivemanager"
 name = "NetworkDriveManager"
 remote_url = "https://github.com/1337userxyz/NetworkDriveManager.git"
@@ -115,6 +119,17 @@ role = "backup"
 [location.paths]
 linux = "/home/tristan/Projekte/GpoManagerMVVMGui"
 macos = "/home/tristan/Projekte/GpoManagerMVVMGui"
+
+[[location]]
+id = "local-agent-studio-1"
+repo_id = "local-agent-studio"
+label = "local-agent-studio"
+role = "primary"
+
+[location.paths]
+windows = 'R:\git\local-agent-studio'
+linux = "/r/git/local-agent-studio"
+macos = "/r/git/local-agent-studio"
 
 [[location]]
 id = "networkdrivemanager-1"
