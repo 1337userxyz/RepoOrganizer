@@ -27,6 +27,16 @@ pub struct TaskEntry {
     pub detail: String,
 }
 
+#[derive(Clone)]
+pub struct SmartSyncLogEntry {
+    pub id: u64,
+    pub state: i32,
+    pub action: String,
+    pub repo: String,
+    pub path: String,
+    pub detail: String,
+}
+
 pub struct ScanItem {
     pub path: String,
     pub remote: Option<String>,
@@ -68,7 +78,7 @@ pub struct State {
     pub smart_sync_ticker_detail: String,
     pub smart_sync_step_current: i32,
     pub smart_sync_step_total: i32,
-    pub smart_sync_log: Vec<TaskEntry>,
+    pub smart_sync_log: Vec<SmartSyncLogEntry>,
 }
 
 pub type Shared = Arc<Mutex<State>>;

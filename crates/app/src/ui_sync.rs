@@ -13,7 +13,7 @@ use crate::ops::plan_smart_sync;
 use crate::state::*;
 use crate::{
     present, CheckRow, DirtyFileRow, DirtyLocFilterItem, HeatItem, InfoRow, LocationRow, MainWindow, MappingRow,
-    MissingBasePathRow, RepoRow, ScanRow, SettingsWindow, SmartSyncWindow, TaskRow, ViewRow,
+    MissingBasePathRow, RepoRow, ScanRow, SettingsWindow, SmartSyncLogRow, SmartSyncWindow, TaskRow, ViewRow,
 };
 
 pub fn apply_theme_all(ui: &MainWindow, st: &State) {
@@ -272,9 +272,11 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
         ssw.set_sync_ticker_log(ModelRc::new(VecModel::from(
             st.smart_sync_log
                 .iter()
-                .map(|t| TaskRow {
-                    title: t.title.as_str().into(),
+                .map(|t| SmartSyncLogRow {
                     state: t.state,
+                    action: t.action.as_str().into(),
+                    repo: t.repo.as_str().into(),
+                    path: t.path.as_str().into(),
                     detail: t.detail.lines().last().unwrap_or("").into(),
                 })
                 .collect::<Vec<_>>(),

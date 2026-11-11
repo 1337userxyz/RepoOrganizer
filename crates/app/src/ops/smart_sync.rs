@@ -1,12 +1,14 @@
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
+use kit_slint::ToSlintModel;
 use repoorganizer_core::paths::{Os, Resolved};
 use repoorganizer_core::scan::link_location;
 use repoorganizer_git::{CliGit, GitBackend, PullMode};
-use slint::ComponentHandle;
+use slint::{ComponentHandle, ModelRc, SharedString};
 
 use crate::ops::git::refresh;
-use crate::state::{resolved, save_shared, Shared, State, TaskEntry};
+use crate::state::{resolved, save_shared, Shared, SmartSyncLogEntry, State, TaskEntry};
 use crate::ui_sync::apply;
 use crate::{MainWindow, SmartSyncDetailRow};
 
@@ -25,14 +27,16 @@ pub struct PushTarget {
     pub loc_id: String,
     pub path: PathBuf,
     pub label: String,
+    pub branch: String,
     pub dirty_count: u32,
     pub ahead_count: u32,
-    pub files_summary: String,
+    pub files_list: Vec<String>,
 }
 
 #[derive(Clone)]
 pub struct SkippedPushTarget {
     pub label: String,
+    pub path: PathBuf,
     pub primary_label: String,
 }
 
@@ -51,6 +55,7 @@ pub struct AltSyncTarget {
     pub loc_id: String,
     pub path: PathBuf,
     pub label: String,
+    pub branch: String,
     pub reason: String,
 }
 
@@ -89,9 +94,7 @@ pub fn plan_smart_sync(st: &State) -> SmartSyncPlan {
         for l in st.shared.locations_of(&r.id) {
             if let Resolved::Local(p) = resolved(st, l) {
                 if p.is_dir() {
-                    let label = if l.label.is_empty() {
-                        r.name.clone()
-                    } else if l.label == r.name {
+                    let label = if l.label.is_empty() || l.label == r.name {
                         r.name.clone()
                     } else {
                         format!("{} ({})", r.name, l.label)
@@ -115,26 +118,26 @@ pub fn plan_smart_sync(st: &State) -> SmartSyncPlan {
                     }
 
                     if d_count > 0 || a_count > 0 {
-                        let files_summary = if d_count > 0 {
+                        let files_list: Vec<String> = if d_count > 0 {
                             let details = snap.map(|s| &s.dirty_details).filter(|d| !d.is_empty());
                             if let Some(list) = details {
-                                let max_show = 8;
-                                let shown: Vec<String> = list
-                                    .iter()
-                                    .take(max_show)
-                                    .map(|df| format!("[{}] {}", df.status_code, df.path))
-                                    .collect();
-                                let extra = if list.len() > max_show {
-                                    format!("  (+{} weitere)", list.len() - max_show)
-                                } else {
-                                    String::new()
-                                };
-                                format!("📄 {}{}", shown.join("  ·  "), extra)
+                                list.iter()
+                                    .map(|df| format!("[{}] {}  —  {}", df.status_code, df.path, df.status))
+                                    .collect()
                             } else {
-                                format!("📄 {} geänderte/neue Datei(en) im Arbeitsverzeichnis", d_count)
+                                let git = CliGit::new(st.local.git_path.as_deref());
+                                let fetched = git.dirty_files(&p);
+                                if !fetched.is_empty() {
+                                    fetched
+                                        .iter()
+                                        .map(|df| format!("[{}] {}  —  {}", df.status_code, df.path, df.status))
+                                        .collect()
+                                } else {
+                                    vec![format!("{d_count} geänderte/neue Datei(en) im Arbeitsverzeichnis")]
+                                }
                             }
                         } else {
-                            String::new()
+                            Vec::new()
                         };
 
                         let is_primary = matches!(l.role, repoorganizer_core::model::Role::Primary);
@@ -144,9 +147,10 @@ pub fn plan_smart_sync(st: &State) -> SmartSyncPlan {
                                 loc_id: l.id.clone(),
                                 path: p.clone(),
                                 label: label.clone(),
+                                branch: branch.clone(),
                                 dirty_count: d_count,
                                 ahead_count: a_count,
-                                files_summary,
+                                files_list,
                             },
                             is_primary,
                         ));
@@ -172,19 +176,21 @@ pub fn plan_smart_sync(st: &State) -> SmartSyncPlan {
             for (skip, _) in push_candidates {
                 skipped_push_targets.push(SkippedPushTarget {
                     label: skip.label,
+                    path: skip.path,
                     primary_label: chosen_label.clone(),
                 });
             }
 
             // Saubere Alternativpfade desselben Repos vormerken, die nach dem Push aktualisiert werden
-            for (alt_id, alt_path, alt_label, alt_dirty, alt_ahead, _, _, _, _) in &local_locs {
+            for (alt_id, alt_path, alt_label, alt_dirty, alt_ahead, _, alt_branch, _, _) in &local_locs {
                 if *alt_id != chosen_loc_id && *alt_dirty == 0 && *alt_ahead == 0 {
                     alt_after_push_targets.push(AltSyncTarget {
                         repo_id: r.id.clone(),
                         loc_id: alt_id.clone(),
                         path: alt_path.clone(),
                         label: alt_label.clone(),
-                        reason: format!("nach Push von {}", chosen_label),
+                        branch: alt_branch.clone(),
+                        reason: format!("nach Push von {chosen_label}"),
                     });
                 }
             }
@@ -207,7 +213,8 @@ pub fn plan_smart_sync(st: &State) -> SmartSyncPlan {
                                     loc_id: alt_id.clone(),
                                     path: alt_path.clone(),
                                     label: alt_label.clone(),
-                                    reason: format!("angleichen an {}", ref_label),
+                                    branch: alt_branch.clone(),
+                                    reason: format!("angleichen an {ref_label}"),
                                 });
                             }
                         }
@@ -303,7 +310,7 @@ pub fn plan_smart_sync(st: &State) -> SmartSyncPlan {
                 if t.branch.is_empty() { String::new() } else { format!(" · ⎇ {}", t.branch) }
             )
             .into(),
-            files: "".into(),
+            files: ModelRc::default(),
             kind: 1,
         })
         .collect();
@@ -314,15 +321,16 @@ pub fn plan_smart_sync(st: &State) -> SmartSyncPlan {
             let info = if t.dirty_count > 0 && t.ahead_count > 0 {
                 format!("✎ {} Datei(en) · ↑ {} Commit(s)", t.dirty_count, t.ahead_count)
             } else if t.dirty_count > 0 {
-                format!("✎ {} uncommittete Datei{}", t.dirty_count, if t.dirty_count == 1 { "" } else { "en" })
+                format!("✎ {} geändert", t.dirty_count)
             } else {
-                format!("↑ {} Commit{} ungesendet", t.ahead_count, if t.ahead_count == 1 { "" } else { "s" })
+                format!("↑ {} Commit{}", t.ahead_count, if t.ahead_count == 1 { "" } else { "s" })
             };
+            let file_rows: Vec<SharedString> = t.files_list.iter().map(|s| SharedString::from(s.as_str())).collect();
             SmartSyncDetailRow {
                 title: t.label.as_str().into(),
                 path: t.path.display().to_string().into(),
                 info: info.into(),
-                files: t.files_summary.as_str().into(),
+                files: file_rows.to_slint_model(),
                 kind: if t.dirty_count > 0 { 2 } else { 1 },
             }
         })
@@ -332,13 +340,13 @@ pub fn plan_smart_sync(st: &State) -> SmartSyncPlan {
         .iter()
         .map(|c| SmartSyncDetailRow {
             title: c.repo_name.as_str().into(),
-            path: format!("→ {}  (von {})", c.target_path, c.source).into(),
+            path: format!("→ {}  (Quelle: {})", c.target_path, c.source).into(),
             info: if c.exists_on_disk {
                 "Ordner verknüpfen".into()
             } else {
                 "Klonen".into()
             },
-            files: "".into(),
+            files: ModelRc::default(),
             kind: 1,
         })
         .collect();
@@ -349,7 +357,7 @@ pub fn plan_smart_sync(st: &State) -> SmartSyncPlan {
             title: a.label.as_str().into(),
             path: a.path.display().to_string().into(),
             info: a.reason.as_str().into(),
-            files: "".into(),
+            files: ModelRc::default(),
             kind: 0,
         })
         .collect();
@@ -360,7 +368,7 @@ pub fn plan_smart_sync(st: &State) -> SmartSyncPlan {
             title: a.label.as_str().into(),
             path: a.path.display().to_string().into(),
             info: a.reason.as_str().into(),
-            files: "".into(),
+            files: ModelRc::default(),
             kind: 0,
         })
         .collect();
@@ -412,25 +420,31 @@ fn update_ticker(
 fn push_ticker_log(
     weak: &slint::Weak<MainWindow>,
     state: &Shared,
-    title: impl Into<String>,
+    action: impl Into<String>,
+    repo: impl Into<String>,
+    path: impl Into<String>,
     state_code: i32,
     detail: impl Into<String>,
 ) -> u64 {
-    let title_s = title.into();
+    let action_s = action.into();
+    let repo_s = repo.into();
+    let path_s = path.into();
     let detail_s = detail.into();
     let mut st = state.lock().unwrap();
     let id = st.next_task;
     st.next_task += 1;
     st.tasks.push(TaskEntry {
         id,
-        title: title_s.clone(),
+        title: format!("{action_s}: {repo_s}"),
         state: state_code,
         detail: detail_s.clone(),
     });
-    st.smart_sync_log.push(TaskEntry {
+    st.smart_sync_log.push(SmartSyncLogEntry {
         id,
-        title: title_s,
         state: state_code,
+        action: action_s,
+        repo: repo_s,
+        path: path_s,
         detail: detail_s,
     });
     if let Some(ui) = weak.upgrade() {
@@ -468,8 +482,8 @@ pub fn run_smart_sync(
         st.smart_sync_running = true;
         st.smart_sync_step_current = 0;
         st.smart_sync_step_total = total_steps as i32;
-        st.smart_sync_ticker_title = "⏳ Smart-Sync gestartet…".into();
-        st.smart_sync_ticker_detail = "Bereite ausgewählte Synchronisationsschritte vor…".into();
+        st.smart_sync_ticker_title = "⏳ Smart-Sync läuft…".into();
+        st.smart_sync_ticker_detail = "Initialisiere Git-Operationen…".into();
         st.smart_sync_log.clear();
         apply(ui, &mut st);
         (st.local.git_path.clone(), st.os, plan)
@@ -483,6 +497,7 @@ pub fn run_smart_sync(
 
     let (weak, state_clone) = (ui.as_weak(), state.clone());
     std::thread::spawn(move || {
+        let run_start = Instant::now();
         let git = CliGit::new(git_path.as_deref());
         let mut step_cur: i32 = 0;
         let step_tot: i32 = {
@@ -494,21 +509,31 @@ pub fn run_smart_sync(
 
         // Helper zum Synchronisieren eines Alternativpfads
         let sync_alt_target = |alt: &AltSyncTarget, step: i32, step_tot: i32, ok_cnt: &mut usize, warn_cnt: &mut usize| {
+            let t0 = Instant::now();
+            let repo_with_branch = if alt.branch.is_empty() {
+                alt.label.clone()
+            } else {
+                format!("{} (⎇ {})", alt.label, alt.branch)
+            };
+            let path_str = alt.path.display().to_string();
+
             update_ticker(
                 &weak,
                 &state_clone,
                 step,
                 step_tot,
-                format!("⏳ [{step}/{step_tot}] Alternativpfad angleichen: {}", alt.label),
-                format!("Prüfe Arbeitsverzeichnis in {}…", alt.path.display()),
+                format!("⏳ [{step}/{step_tot}] Alternativpfad: {}", alt.label),
+                format!("{path_str} · Prüfe Arbeitsverzeichnis…"),
             );
 
             let alt_task_id = push_ticker_log(
                 &weak,
                 &state_clone,
-                format!("Auto-Sync: {}", alt.label),
+                "Alternativpfad",
+                &repo_with_branch,
+                &path_str,
                 0,
-                format!("prüfe & aktualisiere ({})…", alt.path.display()),
+                format!("{} — prüfe & aktualisiere…", alt.reason),
             );
 
             let pre_snap = git.snapshot(&alt.loc_id, &alt.path);
@@ -520,7 +545,7 @@ pub fn run_smart_sync(
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(ui) = w.upgrade() else { return };
                     let mut st = s.lock().unwrap();
-                    let msg = format!("Sicherheitsstopp: {alt_dirty} uncommittete Datei(en) vorhanden – kein Überschreiben");
+                    let msg = format!("Sicherheitsstopp: {alt_dirty} uncommittete Datei(en) vorhanden");
                     if let Some(t) = st.tasks.iter_mut().find(|t| t.id == alt_task_id) {
                         t.state = 2;
                         t.detail = msg.clone();
@@ -561,8 +586,8 @@ pub fn run_smart_sync(
                 &state_clone,
                 step,
                 step_tot,
-                format!("⏳ [{step}/{step_tot}] Alternativpfad angleichen: {}", alt.label),
-                format!("git fetch & pull --ff-only in {}…", alt.path.display()),
+                format!("⏳ [{step}/{step_tot}] Alternativpfad: {}", alt.label),
+                format!("{path_str} · git fetch & pull --ff-only…"),
             );
 
             let pull_res = git.fetch(&alt.path).and_then(|_| git.pull(&alt.path, PullMode::FfOnly));
@@ -571,21 +596,23 @@ pub fn run_smart_sync(
             } else {
                 *warn_cnt += 1;
             }
+            let elapsed = t0.elapsed().as_secs_f32();
             let alt_snap = git.snapshot(&alt.loc_id, &alt.path);
+            let reason_str = alt.reason.clone();
             let (w, s, p_res, a_snap, a_id) = (weak.clone(), state_clone.clone(), pull_res, alt_snap, alt.loc_id.clone());
             let _ = slint::invoke_from_event_loop(move || {
                 let Some(ui) = w.upgrade() else { return };
                 let mut st = s.lock().unwrap();
+                let sha_short = a_snap.head_sha.as_deref().and_then(|h| h.get(..7)).unwrap_or("");
                 let (st_code, detail_msg) = match &p_res {
-                    Ok(out) => (
+                    Ok(_) => (
                         1,
-                        if out.trim().is_empty() {
-                            "Bereits aktuell".to_string()
-                        } else {
-                            out.trim().lines().last().unwrap_or("Aktualisiert").to_string()
-                        },
+                        format!(
+                            "Abgeglichen ({reason_str}{}) · {elapsed:.1}s",
+                            if sha_short.is_empty() { String::new() } else { format!(", HEAD {sha_short}") }
+                        ),
                     ),
-                    Err(e) => (2, format!("Hinweis: {e}")),
+                    Err(e) => (2, format!("Hinweis: {e} ({elapsed:.1}s)")),
                 };
                 if let Some(t) = st.tasks.iter_mut().find(|t| t.id == alt_task_id) {
                     t.state = st_code;
@@ -607,39 +634,51 @@ pub fn run_smart_sync(
                 push_ticker_log(
                     &weak,
                     &state_clone,
-                    format!("Übersprungen: {}", skip.label),
+                    "Kollisionsschutz",
+                    &skip.label,
+                    skip.path.display().to_string(),
                     2,
-                    format!(
-                        "Kollisionsschutz: Änderungen wurden bereits über '{}' gepusht. Bitte manuell prüfen.",
-                        skip.primary_label
-                    ),
+                    format!("Übersprungen – bereits über '{}' gepusht", skip.primary_label),
                 );
             }
 
             for target in &plan.push_targets {
                 step_cur += 1;
+                let t0 = Instant::now();
                 let dirty = target.dirty_count > 0;
-                let kind = if dirty { "commit & push" } else { "push" };
+                let kind_title = if dirty { "Commit & Push" } else { "Push" };
+                let repo_with_branch = if target.branch.is_empty() {
+                    target.label.clone()
+                } else {
+                    format!("{} (⎇ {})", target.label, target.branch)
+                };
+                let path_str = target.path.display().to_string();
 
                 update_ticker(
                     &weak,
                     &state_clone,
                     step_cur,
                     step_tot,
-                    format!("⏳ [{step_cur}/{step_tot}] {kind}: {}", target.label),
+                    format!("⏳ [{step_cur}/{step_tot}] {kind_title}: {}", target.label),
                     if dirty {
-                        format!("Stage & Commit ({} Datei(en)) in {}…", target.dirty_count, target.path.display())
+                        format!("{path_str} · Stage & Commit ({} Datei(en))…", target.dirty_count)
                     } else {
-                        format!("Pushe {} Commit(s) aus {}…", target.ahead_count, target.path.display())
+                        format!("{path_str} · Pushe {} Commit(s)…", target.ahead_count)
                     },
                 );
 
                 let task_id = push_ticker_log(
                     &weak,
                     &state_clone,
-                    format!("{kind}: {}", target.label),
+                    kind_title,
+                    &repo_with_branch,
+                    &path_str,
                     0,
-                    format!("wird ausgeführt in {}…", target.path.display()),
+                    if dirty {
+                        format!("Stage & Commit ({} Datei(en))…", target.dirty_count)
+                    } else {
+                        format!("Pushe {} ungesendete Commit(s)…", target.ahead_count)
+                    },
                 );
 
                 let res = (|| -> Result<String, String> {
@@ -651,8 +690,8 @@ pub fn run_smart_sync(
                             &state_clone,
                             step_cur,
                             step_tot,
-                            format!("⏳ [{step_cur}/{step_tot}] {kind}: {}", target.label),
-                            format!("Commit erstellt – pushe zu Remote ({})…", target.path.display()),
+                            format!("⏳ [{step_cur}/{step_tot}] {kind_title}: {}", target.label),
+                            format!("{path_str} · Commit erstellt – git push zu Remote…"),
                         );
                     }
                     git.push(&target.path).map_err(|e| e.to_string())
@@ -664,8 +703,11 @@ pub fn run_smart_sync(
                 } else {
                     warn_count += 1;
                 }
+                let elapsed = t0.elapsed().as_secs_f32();
                 let snap = git.snapshot(&target.loc_id, &target.path);
                 {
+                    let d_cnt = target.dirty_count;
+                    let a_cnt = target.ahead_count;
                     let (w, s, r_val, s_val, l_id) = (
                         weak.clone(),
                         state_clone.clone(),
@@ -676,16 +718,23 @@ pub fn run_smart_sync(
                     let _ = slint::invoke_from_event_loop(move || {
                         let Some(ui) = w.upgrade() else { return };
                         let mut st = s.lock().unwrap();
+                        let sha_short = s_val.head_sha.as_deref().and_then(|h| h.get(..7)).unwrap_or("");
                         let (st_code, detail_msg) = match &r_val {
-                            Ok(out) => (
-                                1,
-                                if out.trim().is_empty() {
-                                    "Erfolgreich gepusht".to_string()
+                            Ok(_) => {
+                                let summary = if d_cnt > 0 {
+                                    format!("{d_cnt} Datei(en) committet & gepusht")
                                 } else {
-                                    out.trim().lines().last().unwrap_or("ok").to_string()
-                                },
-                            ),
-                            Err(e) => (2, e.clone()),
+                                    format!("{a_cnt} Commit(s) gepusht")
+                                };
+                                (
+                                    1,
+                                    format!(
+                                        "{summary}{} · {elapsed:.1}s",
+                                        if sha_short.is_empty() { String::new() } else { format!(" (HEAD {sha_short})") }
+                                    ),
+                                )
+                            }
+                            Err(e) => (2, format!("{e} ({elapsed:.1}s)")),
                         };
                         if let Some(t) = st.tasks.iter_mut().find(|t| t.id == task_id) {
                             t.state = st_code;
@@ -711,9 +760,11 @@ pub fn run_smart_sync(
                             push_ticker_log(
                                 &weak,
                                 &state_clone,
-                                format!("Auto-Sync übersprungen: {}", alt.label),
+                                "Alternativpfad",
+                                &alt.label,
+                                alt.path.display().to_string(),
                                 2,
-                                "Vorheriger Push fehlgeschlagen – Alternativpfad unverändert.",
+                                "Übersprungen – vorheriger Push fehlgeschlagen",
                             );
                         }
                     }
@@ -733,21 +784,31 @@ pub fn run_smart_sync(
         if do_pull {
             for target in &plan.pull_targets {
                 step_cur += 1;
+                let t0 = Instant::now();
+                let repo_with_branch = if target.branch.is_empty() {
+                    target.label.clone()
+                } else {
+                    format!("{} (⎇ {})", target.label, target.branch)
+                };
+                let path_str = target.path.display().to_string();
+
                 update_ticker(
                     &weak,
                     &state_clone,
                     step_cur,
                     step_tot,
-                    format!("⏳ [{step_cur}/{step_tot}] Remote-Updates pullen: {}", target.label),
-                    format!("Hole {} Commit(s) in {}…", target.behind, target.path.display()),
+                    format!("⏳ [{step_cur}/{step_tot}] Remote-Pull: {}", target.label),
+                    format!("{path_str} · Hole ↓ {} Commit(s) von Remote…", target.behind),
                 );
 
                 let task_id = push_ticker_log(
                     &weak,
                     &state_clone,
-                    format!("pull: {}", target.label),
+                    "Remote-Pull",
+                    &repo_with_branch,
+                    &path_str,
                     0,
-                    format!("hole Updates in {}…", target.path.display()),
+                    format!("Hole ↓ {} Commit(s) per Fast-Forward…", target.behind),
                 );
 
                 let res = git.fetch(&target.path).and_then(|_| git.pull(&target.path, PullMode::FfOnly));
@@ -756,21 +817,23 @@ pub fn run_smart_sync(
                 } else {
                     warn_count += 1;
                 }
+                let elapsed = t0.elapsed().as_secs_f32();
+                let behind_cnt = target.behind;
                 let snap = git.snapshot(&target.loc_id, &target.path);
                 let (w, s, r_val, s_val, l_id) = (weak.clone(), state_clone.clone(), res, snap, target.loc_id.clone());
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(ui) = w.upgrade() else { return };
                     let mut st = s.lock().unwrap();
+                    let sha_short = s_val.head_sha.as_deref().and_then(|h| h.get(..7)).unwrap_or("");
                     let (st_code, detail_msg) = match &r_val {
-                        Ok(out) => (
+                        Ok(_) => (
                             1,
-                            if out.trim().is_empty() {
-                                "Bereits aktuell".to_string()
-                            } else {
-                                out.trim().lines().last().unwrap_or("Aktualisiert").to_string()
-                            },
+                            format!(
+                                "↓ {behind_cnt} Commit(s) integriert{} · {elapsed:.1}s",
+                                if sha_short.is_empty() { String::new() } else { format!(" (HEAD {sha_short})") }
+                            ),
                         ),
-                        Err(e) => (2, format!("Fehler: {e}")),
+                        Err(e) => (2, format!("Fehler: {e} ({elapsed:.1}s)")),
                     };
                     if let Some(t) = st.tasks.iter_mut().find(|t| t.id == task_id) {
                         t.state = st_code;
@@ -791,6 +854,7 @@ pub fn run_smart_sync(
             let mut any_linked = false;
             for item in &plan.missing_clones {
                 step_cur += 1;
+                let t0 = Instant::now();
                 let target_p = Path::new(&item.target_path);
 
                 if item.exists_on_disk || target_p.join(".git").exists() || target_p.is_dir() {
@@ -801,15 +865,17 @@ pub fn run_smart_sync(
                         &state_clone,
                         step_cur,
                         step_tot,
-                        format!("⏳ [{step_cur}/{step_tot}] Basispfad verknüpfen: {}", item.repo_name),
-                        format!("Verknüpfe vorhandenen Ordner {}…", item.target_path),
+                        format!("⏳ [{step_cur}/{step_tot}] Basispfad-Link: {}", item.repo_name),
+                        format!("{} · Verknüpfe vorhandenen Ordner…", item.target_path),
                     );
                     push_ticker_log(
                         &weak,
                         &state_clone,
-                        format!("link: {} -> {}", item.repo_name, item.target_path),
+                        "Basispfad-Link",
+                        &item.repo_name,
+                        &item.target_path,
                         1,
-                        "Vorhandenes Verzeichnis verknüpft",
+                        "Vorhandenes Verzeichnis in repos.toml verknüpft",
                     );
                     let (w, s, rid, tp) = (
                         weak.clone(),
@@ -832,16 +898,18 @@ pub fn run_smart_sync(
                     &state_clone,
                     step_cur,
                     step_tot,
-                    format!("⏳ [{step_cur}/{step_tot}] Klonen: {}", item.repo_name),
-                    format!("Klone von {} nach {}…", item.source, item.target_path),
+                    format!("⏳ [{step_cur}/{step_tot}] Basispfad-Klon: {}", item.repo_name),
+                    format!("Klone {} → {}…", item.source, item.target_path),
                 );
 
                 let task_id = push_ticker_log(
                     &weak,
                     &state_clone,
-                    format!("clone: {} -> {}", item.repo_name, item.target_path),
+                    "Basispfad-Klon",
+                    &item.repo_name,
+                    &item.target_path,
                     0,
-                    "klone in Basispfad…",
+                    format!("Klone von {}…", item.source),
                 );
 
                 let res = git.clone_repo(&item.source, target_p).map_err(|e| e.to_string());
@@ -852,6 +920,8 @@ pub fn run_smart_sync(
                 } else {
                     warn_count += 1;
                 }
+                let elapsed = t0.elapsed().as_secs_f32();
+                let src_str = item.source.clone();
                 let (w, s, rid, tp, r_val) = (
                     weak.clone(),
                     state_clone.clone(),
@@ -863,15 +933,8 @@ pub fn run_smart_sync(
                     let Some(ui) = w.upgrade() else { return };
                     let mut st = s.lock().unwrap();
                     let (st_code, detail_msg) = match &r_val {
-                        Ok(out) => (
-                            1,
-                            if out.trim().is_empty() {
-                                "Erfolgreich geklont & verknüpft".to_string()
-                            } else {
-                                out.trim().lines().last().unwrap_or("ok").to_string()
-                            },
-                        ),
-                        Err(e) => (2, e.clone()),
+                        Ok(_) => (1, format!("Geklont von {src_str} & verknüpft · {elapsed:.1}s")),
+                        Err(e) => (2, format!("{e} ({elapsed:.1}s)")),
                     };
                     if let Some(t) = st.tasks.iter_mut().find(|t| t.id == task_id) {
                         t.state = st_code;
@@ -920,10 +983,11 @@ pub fn run_smart_sync(
             &state_clone,
             step_cur,
             step_tot,
-            "⏳ Aktualisiere Repository-Status…",
-            "Lese aktuelle Git-Snapshots aller Standorte…",
+            "⏳ Aktualisiere Snapshots…",
+            "Lese aktuellen Status aller Standorte…",
         );
 
+        let total_elapsed = run_start.elapsed().as_secs_f32();
         let (w, s) = (weak.clone(), state_clone.clone());
         let _ = slint::invoke_from_event_loop(move || {
             let Some(ui) = w.upgrade() else { return };
@@ -932,11 +996,11 @@ pub fn run_smart_sync(
                 st.smart_sync_running = false;
                 st.smart_sync_step_current = step_tot;
                 if warn_count == 0 {
-                    st.smart_sync_ticker_title = "✅ Smart-Sync erfolgreich abgeschlossen".into();
-                    st.smart_sync_ticker_detail = format!("{ok_count} Aktion(en) erfolgreich ausgeführt.");
+                    st.smart_sync_ticker_title = format!("✅ Smart-Sync fertig ({total_elapsed:.1}s)");
+                    st.smart_sync_ticker_detail = format!("{ok_count} Aktion(en) erfolgreich ausgeführt");
                 } else {
-                    st.smart_sync_ticker_title = "⚠ Smart-Sync mit Hinweisen abgeschlossen".into();
-                    st.smart_sync_ticker_detail = format!("{ok_count} erfolgreich · {warn_count} Hinweis(e)/Fehler (siehe Protokoll unten).");
+                    st.smart_sync_ticker_title = format!("⚠ Smart-Sync fertig ({total_elapsed:.1}s)");
+                    st.smart_sync_ticker_detail = format!("{ok_count} ok · {warn_count} Hinweis(e)/Fehler");
                 }
                 apply(&ui, &mut st);
             }

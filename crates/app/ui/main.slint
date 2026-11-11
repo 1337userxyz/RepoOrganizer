@@ -108,8 +108,16 @@ export struct SmartSyncDetailRow {
     title: string,
     path: string,
     info: string,
-    files: string,
+    files: [string],
     kind: int,
+}
+
+export struct SmartSyncLogRow {
+    state: int,
+    action: string,
+    repo: string,
+    path: string,
+    detail: string,
 }
 
 export struct RepoRow {
@@ -508,12 +516,115 @@ export component SettingsWindow inherits Window {
     }
 }
 
+component SmartSyncDetailItem inherits Rectangle {
+    in property <SmartSyncDetailRow> item;
+    property <bool> files-open: false;
+
+    background: #80808014;
+    border-width: 1px;
+    border-color: #80808024;
+    border-radius: 5px;
+    clip: true;
+
+    VerticalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        padding-top: 4px;
+        padding-bottom: 4px;
+        spacing: 4px;
+
+        HorizontalLayout {
+            height: 24px;
+            spacing: 8px;
+
+            Text {
+                text: root.item.title;
+                font-size: 12px;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+
+            Rectangle {
+                horizontal-stretch: 1;
+                height: 24px;
+                clip: true;
+                Text {
+                    x: 0;
+                    width: parent.width;
+                    height: parent.height;
+                    text: root.item.path;
+                    font-size: 11px;
+                    opacity: 0.75;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+
+            if root.item.files.length > 0: Rectangle {
+                height: 20px;
+                min-width: files-toggle-txt.preferred-width + 14px;
+                background: files-ta.has-hover ? #2a7fd433 : #80808022;
+                border-width: 1px;
+                border-color: root.files-open ? #2a7fd488 : #80808044;
+                border-radius: 4px;
+                files-toggle-txt := Text {
+                    text: (root.files-open ? "▼ " : "▶ ") + root.item.files.length + (root.item.files.length == 1 ? " Datei" : " Dateien");
+                    font-size: 11px;
+                    font-weight: 600;
+                    color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                files-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.files-open = !root.files-open; }
+                }
+            }
+
+            HorizontalLayout {
+                alignment: center;
+                Badge {
+                    text: root.item.info;
+                    kind: root.item.kind;
+                }
+            }
+        }
+
+        if root.files-open && root.item.files.length > 0: Rectangle {
+            background: #80808010;
+            border-radius: 4px;
+            clip: true;
+            VerticalLayout {
+                padding-left: 8px;
+                padding-right: 8px;
+                padding-top: 4px;
+                padding-bottom: 4px;
+                spacing: 2px;
+                for f in root.item.files: Rectangle {
+                    height: 18px;
+                    clip: true;
+                    Text {
+                        x: 0;
+                        width: parent.width;
+                        height: parent.height;
+                        text: "📄 " + f;
+                        font-size: 11px;
+                        opacity: 0.9;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                }
+            }
+        }
+    }
+}
+
 export component SmartSyncWindow inherits Window {
     title: "RepoOrganizer – Smart-Sync";
     min-width: 760px;
-    min-height: 540px;
+    min-height: 520px;
     preferred-width: 860px;
-    preferred-height: 660px;
+    preferred-height: 640px;
 
     in property <int> sync-behind-count: 0;
     in property <int> sync-dirty-count: 0;
@@ -540,16 +651,22 @@ export component SmartSyncWindow inherits Window {
     in property <string> sync-ticker-detail: "";
     in property <int> sync-step-current: 0;
     in property <int> sync-step-total: 0;
-    in property <[TaskRow]> sync-ticker-log;
+    in property <[SmartSyncLogRow]> sync-ticker-log;
+    in-out property <bool> ticker-log-open: true;
 
     property <int> push-total-count: root.sync-dirty-count + root.sync-ahead-count;
-    property <bool> eff-commit-push: root.sync-opt-commit-push && root.push-total-count > 0;
-    property <int> active-alt-count: root.sync-alt-standalone-count + (root.eff-commit-push ? root.sync-alt-after-push-count : 0);
+    property <bool> pull-active: root.sync-opt-pull && root.sync-behind-count > 0;
+    property <bool> push-active: root.sync-opt-commit-push && root.push-total-count > 0;
+    property <bool> clone-active: root.sync-opt-clone-missing && root.sync-missing-bp-count > 0;
+    property <int> active-alt-count: root.sync-alt-standalone-count + (root.push-active ? root.sync-alt-after-push-count : 0);
+    property <bool> alt-active: root.sync-opt-auto-sync && root.active-alt-count > 0;
+    property <bool> has-inactive-options: !root.pull-active || !root.push-active || !root.clone-active || !root.alt-active;
+
     property <int> sync-selected-actions:
-        (root.sync-opt-pull && root.sync-behind-count > 0 ? root.sync-behind-count : 0)
-        + (root.eff-commit-push ? root.push-total-count : 0)
-        + (root.sync-opt-clone-missing && root.sync-missing-bp-count > 0 ? root.sync-missing-bp-count : 0)
-        + (root.sync-opt-auto-sync && root.active-alt-count > 0 ? root.active-alt-count : 0);
+        (root.pull-active ? root.sync-behind-count : 0)
+        + (root.push-active ? root.push-total-count : 0)
+        + (root.clone-active ? root.sync-missing-bp-count : 0)
+        + (root.alt-active ? root.active-alt-count : 0);
 
     public function apply-theme(t: string) {
         Palette.color-scheme = t == "dark" ? ColorScheme.dark : t == "light" ? ColorScheme.light : ColorScheme.unknown;
@@ -559,15 +676,15 @@ export component SmartSyncWindow inherits Window {
     callback close-window();
 
     VerticalLayout {
-        padding: 18px;
-        spacing: 12px;
+        padding: 16px;
+        spacing: 10px;
 
         // Kopfzeile
         HorizontalLayout {
             spacing: 8px;
             Text {
                 text: "⚡ Smart-Sync: Alles intelligent synchronisieren";
-                font-size: 19px;
+                font-size: 18px;
                 font-weight: 700;
                 color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8;
                 vertical-alignment: center;
@@ -580,25 +697,29 @@ export component SmartSyncWindow inherits Window {
         }
 
         Text {
-            text: "Wähle aus, welche Aktionen intelligent ausgeführt werden sollen. Datensicherheit garantiert: Uncommittete oder divergierende Stände werden niemals überschrieben.";
+            text: "Aktive Synchronisationsschritte stehen oben samt betroffenen Pfaden. Dateilisten lassen sich bei Bedarf per Klick aufklappen.";
             font-size: 12px;
-            opacity: 0.8;
+            opacity: 0.78;
             wrap: word-wrap;
         }
 
-        // Hauptbereich mit den 4 Optionen & Details
+        // Hauptbereich: Aktive Optionen oben, inaktive Optionen unten
         ScrollView {
             vertical-stretch: 1;
+
             VerticalLayout {
-                spacing: 10px;
+                spacing: 8px;
                 alignment: start;
 
-                // 1. Remote-Updates pullen
-                Rectangle {
-                    background: (root.sync-opt-pull && root.sync-behind-count > 0) ? #2a7fd412 : #8080800a;
+                // === AKTIVE OPTIONEN (OBEN) ===
+
+                // 1. Aktiv: Remote-Updates pullen
+                if root.pull-active: Rectangle {
+                    background: #2a7fd412;
                     border-width: 1px;
-                    border-color: (root.sync-opt-pull && root.sync-behind-count > 0) ? #2a7fd455 : #80808028;
+                    border-color: #2a7fd455;
                     border-radius: 6px;
+                    clip: true;
                     VerticalLayout {
                         padding: 10px;
                         spacing: 6px;
@@ -607,49 +728,23 @@ export component SmartSyncWindow inherits Window {
                             checked <=> root.sync-opt-pull;
                             enabled: !root.sync-running && root.sync-behind-count > 0;
                         }
-                        if root.sync-opt-pull && root.sync-behind-count > 0 && root.sync-pull-details.length > 0: VerticalLayout {
-                            padding-left: 26px;
+                        if root.sync-pull-details.length > 0: VerticalLayout {
+                            padding-left: 24px;
                             spacing: 4px;
-                            for item in root.sync-pull-details: Rectangle {
-                                background: #80808012;
-                                border-radius: 4px;
-                                HorizontalLayout {
-                                    padding-left: 8px;
-                                    padding-right: 8px;
-                                    padding-top: 4px;
-                                    padding-bottom: 4px;
-                                    spacing: 8px;
-                                    Text {
-                                        text: item.title;
-                                        font-size: 12px;
-                                        font-weight: 700;
-                                        vertical-alignment: center;
-                                    }
-                                    Text {
-                                        text: item.path;
-                                        font-size: 11px;
-                                        opacity: 0.75;
-                                        vertical-alignment: center;
-                                        horizontal-stretch: 1;
-                                        overflow: elide;
-                                    }
-                                    Badge {
-                                        text: item.info;
-                                        kind: item.kind;
-                                        y: (parent.height - self.height) / 2;
-                                    }
-                                }
+                            for item in root.sync-pull-details: SmartSyncDetailItem {
+                                item: item;
                             }
                         }
                     }
                 }
 
-                // 2. Lokale Änderungen committen & pushen
-                Rectangle {
-                    background: root.eff-commit-push ? #d98e0412 : #8080800a;
+                // 2. Aktiv: Lokale Änderungen committen & pushen
+                if root.push-active: Rectangle {
+                    background: #d98e0412;
                     border-width: 1px;
-                    border-color: root.eff-commit-push ? #d98e0455 : #80808028;
+                    border-color: #d98e0455;
                     border-radius: 6px;
+                    clip: true;
                     VerticalLayout {
                         padding: 10px;
                         spacing: 6px;
@@ -665,10 +760,11 @@ export component SmartSyncWindow inherits Window {
                                 }
                             }
                         }
-                        if root.eff-commit-push: VerticalLayout {
-                            padding-left: 26px;
+                        VerticalLayout {
+                            padding-left: 24px;
                             spacing: 6px;
                             HorizontalLayout {
+                                height: 28px;
                                 spacing: 8px;
                                 Text { text: "Commit-Nachricht:"; vertical-alignment: center; font-size: 12px; font-weight: 600; opacity: 0.9; }
                                 LineEdit {
@@ -680,56 +776,21 @@ export component SmartSyncWindow inherits Window {
                             }
                             if root.sync-push-details.length > 0: VerticalLayout {
                                 spacing: 4px;
-                                for item in root.sync-push-details: Rectangle {
-                                    background: #80808012;
-                                    border-radius: 4px;
-                                    VerticalLayout {
-                                        padding-left: 8px;
-                                        padding-right: 8px;
-                                        padding-top: 5px;
-                                        padding-bottom: 5px;
-                                        spacing: 3px;
-                                        HorizontalLayout {
-                                            spacing: 8px;
-                                            Text {
-                                                text: item.title;
-                                                font-size: 12px;
-                                                font-weight: 700;
-                                                vertical-alignment: center;
-                                            }
-                                            Text {
-                                                text: item.path;
-                                                font-size: 11px;
-                                                opacity: 0.75;
-                                                vertical-alignment: center;
-                                                horizontal-stretch: 1;
-                                                overflow: elide;
-                                            }
-                                            Badge {
-                                                text: item.info;
-                                                kind: item.kind;
-                                                y: (parent.height - self.height) / 2;
-                                            }
-                                        }
-                                        if item.files != "": Text {
-                                            text: item.files;
-                                            font-size: 11px;
-                                            opacity: 0.85;
-                                            wrap: word-wrap;
-                                        }
-                                    }
+                                for item in root.sync-push-details: SmartSyncDetailItem {
+                                    item: item;
                                 }
                             }
                         }
                     }
                 }
 
-                // 3. In fehlende Basispfade klonen
-                Rectangle {
-                    background: (root.sync-opt-clone-missing && root.sync-missing-bp-count > 0) ? #2a7fd412 : #8080800a;
+                // 3. Aktiv: In fehlende Basispfade klonen
+                if root.clone-active: Rectangle {
+                    background: #2a7fd412;
                     border-width: 1px;
-                    border-color: (root.sync-opt-clone-missing && root.sync-missing-bp-count > 0) ? #2a7fd455 : #80808028;
+                    border-color: #2a7fd455;
                     border-radius: 6px;
+                    clip: true;
                     VerticalLayout {
                         padding: 10px;
                         spacing: 6px;
@@ -738,49 +799,23 @@ export component SmartSyncWindow inherits Window {
                             checked <=> root.sync-opt-clone-missing;
                             enabled: !root.sync-running && root.sync-missing-bp-count > 0;
                         }
-                        if root.sync-opt-clone-missing && root.sync-missing-bp-count > 0 && root.sync-clone-details.length > 0: VerticalLayout {
-                            padding-left: 26px;
+                        if root.sync-clone-details.length > 0: VerticalLayout {
+                            padding-left: 24px;
                             spacing: 4px;
-                            for item in root.sync-clone-details: Rectangle {
-                                background: #80808012;
-                                border-radius: 4px;
-                                HorizontalLayout {
-                                    padding-left: 8px;
-                                    padding-right: 8px;
-                                    padding-top: 4px;
-                                    padding-bottom: 4px;
-                                    spacing: 8px;
-                                    Text {
-                                        text: item.title;
-                                        font-size: 12px;
-                                        font-weight: 700;
-                                        vertical-alignment: center;
-                                    }
-                                    Text {
-                                        text: item.path;
-                                        font-size: 11px;
-                                        opacity: 0.8;
-                                        vertical-alignment: center;
-                                        horizontal-stretch: 1;
-                                        overflow: elide;
-                                    }
-                                    Badge {
-                                        text: item.info;
-                                        kind: item.kind;
-                                        y: (parent.height - self.height) / 2;
-                                    }
-                                }
+                            for item in root.sync-clone-details: SmartSyncDetailItem {
+                                item: item;
                             }
                         }
                     }
                 }
 
-                // 4. Lokale Alternativpfade automatisch angleichen
-                Rectangle {
-                    background: (root.sync-opt-auto-sync && root.active-alt-count > 0) ? #2e9e5b12 : #8080800a;
+                // 4. Aktiv: Lokale Alternativpfade automatisch angleichen
+                if root.alt-active: Rectangle {
+                    background: #2e9e5b12;
                     border-width: 1px;
-                    border-color: (root.sync-opt-auto-sync && root.active-alt-count > 0) ? #2e9e5b55 : #80808028;
+                    border-color: #2e9e5b55;
                     border-radius: 6px;
+                    clip: true;
                     VerticalLayout {
                         padding: 10px;
                         spacing: 6px;
@@ -789,71 +824,169 @@ export component SmartSyncWindow inherits Window {
                             checked <=> root.sync-opt-auto-sync;
                             enabled: !root.sync-running && root.active-alt-count > 0;
                         }
-                        if root.sync-opt-auto-sync && root.active-alt-count > 0: VerticalLayout {
-                            padding-left: 26px;
+                        VerticalLayout {
+                            padding-left: 24px;
                             spacing: 4px;
-                            for item in root.sync-alt-standalone-details: Rectangle {
-                                background: #80808012;
-                                border-radius: 4px;
-                                HorizontalLayout {
-                                    padding-left: 8px;
-                                    padding-right: 8px;
-                                    padding-top: 4px;
-                                    padding-bottom: 4px;
-                                    spacing: 8px;
-                                    Text {
-                                        text: item.title;
-                                        font-size: 12px;
-                                        font-weight: 700;
-                                        vertical-alignment: center;
-                                    }
-                                    Text {
-                                        text: item.path;
-                                        font-size: 11px;
-                                        opacity: 0.75;
-                                        vertical-alignment: center;
-                                        horizontal-stretch: 1;
-                                        overflow: elide;
-                                    }
-                                    Badge {
-                                        text: item.info;
-                                        kind: item.kind;
-                                        y: (parent.height - self.height) / 2;
+                            for item in root.sync-alt-standalone-details: SmartSyncDetailItem {
+                                item: item;
+                            }
+                            if root.push-active: VerticalLayout {
+                                spacing: 4px;
+                                for item in root.sync-alt-after-push-details: SmartSyncDetailItem {
+                                    item: item;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // === INAKTIVE / ABGEWÄHLTE OPTIONEN (UNTEN SORTIERT) ===
+                if root.has-inactive-options: VerticalLayout {
+                    spacing: 5px;
+                    padding-top: 4px;
+
+                    Text {
+                        text: "Inaktive Optionen (abgewählt oder aktuell nichts zu tun):";
+                        font-size: 11px;
+                        font-weight: 600;
+                        opacity: 0.6;
+                    }
+
+                    // Zuerst: Verfügbare, aber aktuell abgewählte Optionen (count > 0)
+                    if !root.pull-active && root.sync-behind-count > 0: Rectangle {
+                        height: 34px;
+                        background: #8080800c;
+                        border-width: 1px;
+                        border-color: #80808028;
+                        border-radius: 6px;
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            CheckBox {
+                                text: "📥 Remote-Updates pullen (" + root.sync-behind-count + " Standort" + (root.sync-behind-count == 1 ? "" : "e") + " verfügbar)";
+                                checked <=> root.sync-opt-pull;
+                                enabled: !root.sync-running;
+                            }
+                        }
+                    }
+                    if !root.push-active && root.push-total-count > 0: Rectangle {
+                        height: 34px;
+                        background: #8080800c;
+                        border-width: 1px;
+                        border-color: #80808028;
+                        border-radius: 6px;
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            CheckBox {
+                                text: "🚀 Lokale Änderungen committen & pushen (" + root.push-total-count + " Standort" + (root.push-total-count == 1 ? "" : "e") + " verfügbar)";
+                                checked <=> root.sync-opt-commit-push;
+                                enabled: !root.sync-running;
+                                toggled => {
+                                    if (root.sync-alt-standalone-count + (root.sync-opt-commit-push && root.push-total-count > 0 ? root.sync-alt-after-push-count : 0)) == 0 {
+                                        root.sync-opt-auto-sync = false;
+                                    } else if root.sync-opt-commit-push && root.sync-alt-after-push-count > 0 {
+                                        root.sync-opt-auto-sync = true;
                                     }
                                 }
                             }
-                            if root.eff-commit-push: VerticalLayout {
-                                spacing: 4px;
-                                for item in root.sync-alt-after-push-details: Rectangle {
-                                    background: #80808012;
-                                    border-radius: 4px;
-                                    HorizontalLayout {
-                                        padding-left: 8px;
-                                        padding-right: 8px;
-                                        padding-top: 4px;
-                                        padding-bottom: 4px;
-                                        spacing: 8px;
-                                        Text {
-                                            text: item.title;
-                                            font-size: 12px;
-                                            font-weight: 700;
-                                            vertical-alignment: center;
-                                        }
-                                        Text {
-                                            text: item.path;
-                                            font-size: 11px;
-                                            opacity: 0.75;
-                                            vertical-alignment: center;
-                                            horizontal-stretch: 1;
-                                            overflow: elide;
-                                        }
-                                        Badge {
-                                            text: item.info;
-                                            kind: item.kind;
-                                            y: (parent.height - self.height) / 2;
-                                        }
-                                    }
-                                }
+                        }
+                    }
+                    if !root.clone-active && root.sync-missing-bp-count > 0: Rectangle {
+                        height: 34px;
+                        background: #8080800c;
+                        border-width: 1px;
+                        border-color: #80808028;
+                        border-radius: 6px;
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            CheckBox {
+                                text: "📁 In fehlende Basispfade klonen (" + root.sync-missing-bp-count + " fehlende" + (root.sync-missing-bp-count == 1 ? "r" : "") + " Standort" + (root.sync-missing-bp-count == 1 ? "" : "e") + " in RAM-Disk / SSD)";
+                                checked <=> root.sync-opt-clone-missing;
+                                enabled: !root.sync-running;
+                            }
+                        }
+                    }
+                    if !root.alt-active && root.active-alt-count > 0: Rectangle {
+                        height: 34px;
+                        background: #8080800c;
+                        border-width: 1px;
+                        border-color: #80808028;
+                        border-radius: 6px;
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            CheckBox {
+                                text: "🔄 Lokale Alternativpfade (z. B. SSD ↔ RAM-Disk) automatisch angleichen (" + root.active-alt-count + " Standort" + (root.active-alt-count == 1 ? "" : "e") + " verfügbar)";
+                                checked <=> root.sync-opt-auto-sync;
+                                enabled: !root.sync-running;
+                            }
+                        }
+                    }
+
+                    // Ganz unten: Ausgegraute Optionen ohne anstehende Aufgaben (count == 0)
+                    if root.sync-behind-count == 0: Rectangle {
+                        height: 32px;
+                        background: #80808006;
+                        border-width: 1px;
+                        border-color: #80808018;
+                        border-radius: 6px;
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            CheckBox {
+                                text: "📥 Remote-Updates pullen (keine neuen Remote-Commits)";
+                                checked: false;
+                                enabled: false;
+                            }
+                        }
+                    }
+                    if root.push-total-count == 0: Rectangle {
+                        height: 32px;
+                        background: #80808006;
+                        border-width: 1px;
+                        border-color: #80808018;
+                        border-radius: 6px;
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            CheckBox {
+                                text: "🚀 Lokale Änderungen committen & pushen (alles sauber & gepusht)";
+                                checked: false;
+                                enabled: false;
+                            }
+                        }
+                    }
+                    if root.sync-missing-bp-count == 0: Rectangle {
+                        height: 32px;
+                        background: #80808006;
+                        border-width: 1px;
+                        border-color: #80808018;
+                        border-radius: 6px;
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            CheckBox {
+                                text: "📁 In fehlende Basispfade klonen (alle Basispfade vollständig)";
+                                checked: false;
+                                enabled: false;
+                            }
+                        }
+                    }
+                    if root.active-alt-count == 0: Rectangle {
+                        height: 32px;
+                        background: #80808006;
+                        border-width: 1px;
+                        border-color: #80808018;
+                        border-radius: 6px;
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            CheckBox {
+                                text: "🔄 Lokale Alternativpfade (z. B. SSD ↔ RAM-Disk) automatisch angleichen (nichts anzugleichen)";
+                                checked: false;
+                                enabled: false;
                             }
                         }
                     }
@@ -861,88 +994,154 @@ export component SmartSyncWindow inherits Window {
             }
         }
 
-        // Live Status-Ticker während und nach der Ausführung
+        // Kompakter, informativer Status-Ticker während und nach der Ausführung
         if root.sync-running || root.sync-ticker-title != "" || root.sync-ticker-log.length > 0: Rectangle {
             background: (Palette.color-scheme == ColorScheme.dark) ? #0f172a : #1e293b0d;
-            border-width: 1.5px;
-            border-color: root.sync-running ? #38bdf8 : #2e9e5b88;
+            border-width: 1px;
+            border-color: root.sync-running ? #38bdf8aa : #2e9e5b77;
             border-radius: 6px;
-            VerticalLayout {
-                padding: 10px;
-                spacing: 6px;
+            clip: true;
 
+            VerticalLayout {
+                padding-left: 10px;
+                padding-right: 10px;
+                padding-top: 6px;
+                padding-bottom: 6px;
+                spacing: 4px;
+
+                // Einzeilige kompakte Status-Kopfzeile mit integriertem Fortschrittsbalken
                 HorizontalLayout {
+                    height: 24px;
                     spacing: 8px;
+
                     Text {
                         text: root.sync-ticker-title != "" ? root.sync-ticker-title : "Status-Ticker";
-                        font-size: 13px;
+                        font-size: 12px;
                         font-weight: 700;
                         color: root.sync-running
                             ? ((Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8)
                             : #2e9e5b;
                         vertical-alignment: center;
+                    }
+
+                    if root.sync-ticker-detail != "": Rectangle {
                         horizontal-stretch: 1;
-                        overflow: elide;
+                        height: 24px;
+                        clip: true;
+                        Text {
+                            x: 0;
+                            width: parent.width;
+                            height: parent.height;
+                            text: "·  " + root.sync-ticker-detail;
+                            font-size: 11px;
+                            opacity: 0.85;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
                     }
-                    if root.sync-step-total > 0: Badge {
-                        text: root.sync-step-current + " / " + root.sync-step-total;
-                        kind: root.sync-running ? 1 : 0;
+                    if root.sync-ticker-detail == "": Rectangle { horizontal-stretch: 1; }
+
+                    if root.sync-step-total > 0: HorizontalLayout {
+                        spacing: 6px;
+                        alignment: center;
+                        Rectangle {
+                            width: 72px;
+                            height: 6px;
+                            y: (parent.height - self.height) / 2;
+                            background: #80808030;
+                            border-radius: 3px;
+                            clip: true;
+                            Rectangle {
+                                x: 0;
+                                y: 0;
+                                height: parent.height;
+                                width: parent.width * Math.min(1.0, Math.max(0.0, root.sync-step-current / root.sync-step-total));
+                                background: root.sync-running ? #2a7fd4 : #2e9e5b;
+                                border-radius: 3px;
+                            }
+                        }
+                        Badge {
+                            text: root.sync-step-current + "/" + root.sync-step-total;
+                            kind: root.sync-running ? 1 : 0;
+                        }
+                    }
+
+                    if root.sync-ticker-log.length > 0: Rectangle {
+                        height: 20px;
+                        min-width: log-btn-txt.preferred-width + 12px;
+                        background: log-ta.has-hover ? #80808030 : #80808018;
+                        border-radius: 4px;
+                        log-btn-txt := Text {
+                            text: (root.ticker-log-open ? "▼ Details (" : "▶ Details (") + root.sync-ticker-log.length + ")";
+                            font-size: 10px;
+                            font-weight: 600;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        log-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.ticker-log-open = !root.ticker-log-open; }
+                        }
                     }
                 }
 
-                if root.sync-ticker-detail != "": Text {
-                    text: root.sync-ticker-detail;
-                    font-size: 11px;
-                    opacity: 0.85;
-                    overflow: elide;
-                }
-
-                if root.sync-step-total > 0: Rectangle {
-                    height: 6px;
-                    background: #80808030;
-                    border-radius: 3px;
-                    clip: true;
-                    Rectangle {
-                        x: 0;
-                        y: 0;
-                        height: parent.height;
-                        width: parent.width * Math.min(1.0, Math.max(0.0, root.sync-step-current / root.sync-step-total));
-                        background: root.sync-running ? #2a7fd4 : #2e9e5b;
-                        border-radius: 3px;
-                    }
-                }
-
-                if root.sync-ticker-log.length > 0: Rectangle {
-                    height: min(140px, max(44px, root.sync-ticker-log.length * 22px));
+                // Kompakte mehrspaltige Detailtabelle (nutzt die volle Breite informativ aus)
+                if root.ticker-log-open && root.sync-ticker-log.length > 0: Rectangle {
+                    height: min(66px, max(20px, root.sync-ticker-log.length * 20px));
                     background: #8080800c;
                     border-radius: 4px;
+                    clip: true;
                     ListView {
                         for entry in root.sync-ticker-log: HorizontalLayout {
-                            height: 22px;
+                            height: 20px;
                             padding-left: 6px;
                             padding-right: 6px;
                             spacing: 8px;
                             Text {
                                 text: entry.state == 0 ? "⏳" : entry.state == 1 ? "✔" : "⚠";
                                 color: Kinds.kind-color(entry.state == 0 ? 1 : entry.state == 1 ? 0 : 2);
-                                width: 18px;
+                                width: 14px;
+                                font-size: 11px;
                                 vertical-alignment: center;
                             }
                             Text {
-                                text: entry.title;
+                                text: entry.action;
                                 font-size: 11px;
-                                font-weight: entry.state == 0 ? 700 : 600;
-                                width: 250px;
+                                font-weight: 700;
+                                width: 105px;
                                 vertical-alignment: center;
                                 overflow: elide;
                             }
                             Text {
-                                text: entry.detail;
+                                text: entry.repo;
                                 font-size: 11px;
-                                opacity: 0.8;
+                                font-weight: 600;
+                                width: 155px;
                                 vertical-alignment: center;
+                                overflow: elide;
+                            }
+                            Text {
+                                text: entry.path;
+                                font-size: 11px;
+                                opacity: 0.7;
+                                width: 190px;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                            Rectangle {
                                 horizontal-stretch: 1;
-                                overflow: elide;
+                                height: 20px;
+                                clip: true;
+                                Text {
+                                    x: 0;
+                                    width: parent.width;
+                                    height: parent.height;
+                                    text: entry.detail;
+                                    font-size: 11px;
+                                    opacity: 0.9;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
                             }
                         }
                     }
@@ -962,11 +1161,11 @@ export component SmartSyncWindow inherits Window {
                 enabled: !root.sync-running && root.sync-selected-actions > 0;
                 clicked => {
                     root.run-smart-sync(
-                        root.sync-opt-pull && root.sync-behind-count > 0,
-                        root.eff-commit-push,
+                        root.pull-active,
+                        root.push-active,
                         root.sync-commit-msg,
-                        root.sync-opt-clone-missing && root.sync-missing-bp-count > 0,
-                        root.sync-opt-auto-sync && root.active-alt-count > 0
+                        root.clone-active,
+                        root.alt-active
                     );
                 }
             }
