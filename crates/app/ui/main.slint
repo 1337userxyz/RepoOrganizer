@@ -182,6 +182,35 @@ component ColSep inherits Rectangle {
     background: #80808022;
 }
 
+component HoverCard inherits Rectangle {
+    in property <int> row-index: 0;
+    in property <length> card-x: 0px;
+    in property <length> card-width: 360px;
+    in property <length> card-height: 100px;
+
+    x: root.card-x;
+    // Öffnet nach unten bis Zeile 4 (damit nach oben nie abgeschnitten wird),
+    // ab Zeile 5 nach oben über die Zeile.
+    y: root.row-index < 5 ? 36px : -root.card-height - 4px;
+    width: root.card-width;
+    height: root.card-height;
+    z: 1000;
+    background: (Palette.color-scheme == ColorScheme.dark) ? #1e293b : #ffffff;
+    border-width: 1.5px;
+    border-color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #2a7fd4;
+    border-radius: 6px;
+    drop-shadow-blur: 8px;
+    drop-shadow-color: #00000060;
+    drop-shadow-offset-y: 2px;
+    clip: true;
+
+    VerticalLayout {
+        padding: 8px;
+        spacing: 4px;
+        @children
+    }
+}
+
 component BarChart inherits Rectangle {
     in property <[BarItem]> items;
     in property <color> bar-color: #2a7fd4;
@@ -1246,7 +1275,7 @@ export component MainWindow inherits Window {
     in-out property <bool> show-dirty-files: false;
 
     // Dynamische Höhe des Detail-Panels & Aktivierung einzelner Detailansichten
-    in-out property <length> detail-panel-height: 140px;
+    in-out property <length> detail-panel-height: 0px;
     in-out property <string> active-detail-location-id: "";
     in-out property <bool> all-locations-expanded: false;
 
@@ -1700,48 +1729,35 @@ export component MainWindow inherits Window {
                                         }
 
                                         // Tooltip-Card mit Dateiliste beim Hovern
-                                        if status-ta.has-hover && (repo.dirty-count > 0 || repo.dirty-files-preview != ""): Rectangle {
-                                            x: 0px;
-                                            y: idx < 2 ? 36px : -150px;
-                                            width: 380px;
-                                            height: 144px;
-                                            z: 1000;
-                                            background: (Palette.color-scheme == ColorScheme.dark) ? #1e293b : #ffffff;
-                                            border-width: 1.5px;
-                                            border-color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #2a7fd4;
-                                            border-radius: 6px;
-                                            drop-shadow-blur: 8px;
-                                            drop-shadow-color: #00000060;
-                                            drop-shadow-offset-y: 2px;
+                                        if status-ta.has-hover && (repo.dirty-count > 0 || repo.dirty-files-preview != ""): HoverCard {
+                                            row-index: idx;
+                                            card-x: 0px;
+                                            card-width: 380px;
+                                            card-height: 144px;
 
-                                            VerticalLayout {
-                                                padding: 8px;
-                                                spacing: 4px;
-
-                                                HorizontalLayout {
-                                                    spacing: 6px;
-                                                    Text {
-                                                        text: repo.dirty-count > 0 ? ("✎ " + repo.dirty-count + " uncommittete Datei" + (repo.dirty-count == 1 ? "" : "en")) : "✓ Arbeitskopie ist sauber";
-                                                        font-size: 11px;
-                                                        font-weight: 700;
-                                                        color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8;
-                                                        horizontal-stretch: 1;
-                                                    }
-                                                    if repo.stash-count > 0: Badge {
-                                                        text: "📦 " + repo.stash-count + " Stash";
-                                                        kind: 2;
-                                                    }
-                                                }
-
-                                                Rectangle { height: 1px; background: #80808022; }
-
+                                            HorizontalLayout {
+                                                spacing: 6px;
                                                 Text {
-                                                    text: repo.dirty-files-preview;
+                                                    text: repo.dirty-count > 0 ? ("✎ " + repo.dirty-count + " uncommittete Datei" + (repo.dirty-count == 1 ? "" : "en")) : "✓ Arbeitskopie ist sauber";
                                                     font-size: 11px;
-                                                    wrap: word-wrap;
-                                                    vertical-stretch: 1;
-                                                    overflow: elide;
+                                                    font-weight: 700;
+                                                    color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8;
+                                                    horizontal-stretch: 1;
                                                 }
+                                                if repo.stash-count > 0: Badge {
+                                                    text: "📦 " + repo.stash-count + " Stash";
+                                                    kind: 2;
+                                                }
+                                            }
+
+                                            Rectangle { height: 1px; background: #80808022; }
+
+                                            Text {
+                                                text: repo.dirty-files-preview;
+                                                font-size: 11px;
+                                                wrap: word-wrap;
+                                                vertical-stretch: 1;
+                                                overflow: elide;
                                             }
                                         }
                                     }
@@ -1790,64 +1806,51 @@ export component MainWindow inherits Window {
                                         }
 
                                         // Tooltip-Card mit Commit-Details beim Hovern
-                                        if commit-ta.has-hover && repo.last-commit-hash != "": Rectangle {
-                                            x: 0px;
-                                            y: idx < 2 ? 36px : -94px;
-                                            width: 350px;
-                                            height: 90px;
-                                            z: 1000;
-                                            background: (Palette.color-scheme == ColorScheme.dark) ? #1e293b : #ffffff;
-                                            border-width: 1.5px;
-                                            border-color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #2a7fd4;
-                                            border-radius: 6px;
-                                            drop-shadow-blur: 8px;
-                                            drop-shadow-color: #00000060;
-                                            drop-shadow-offset-y: 2px;
+                                        if commit-ta.has-hover && repo.last-commit-hash != "": HoverCard {
+                                            row-index: idx;
+                                            card-x: 0px;
+                                            card-width: 350px;
+                                            card-height: 90px;
 
-                                            VerticalLayout {
-                                                padding: 8px;
-                                                spacing: 4px;
-
-                                                HorizontalLayout {
-                                                    spacing: 6px;
-                                                    Text {
-                                                        text: "⎇ " + (repo.branch != "" ? repo.branch : "HEAD");
-                                                        font-size: 11px;
-                                                        font-weight: 700;
-                                                        color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8;
-                                                    }
-                                                    Rectangle { horizontal-stretch: 1; }
-                                                    Text {
-                                                        text: "#" + repo.last-commit-hash;
-                                                        font-size: 11px;
-                                                        font-family: "monospace";
-                                                        font-weight: 700;
-                                                        color: (Palette.color-scheme == ColorScheme.dark) ? #94a3b8 : #64748b;
-                                                    }
-                                                }
-
-                                                HorizontalLayout {
-                                                    spacing: 6px;
-                                                    Text {
-                                                        text: "👤 " + (repo.last-commit-author != "" ? repo.last-commit-author : "Unbekannt");
-                                                        font-size: 11px;
-                                                        opacity: 0.85;
-                                                        overflow: elide;
-                                                        horizontal-stretch: 1;
-                                                    }
-                                                    Text {
-                                                        text: "🕒 " + repo.last-commit + (repo.last-commit-time != "" ? (" · " + repo.last-commit-time) : "");
-                                                        font-size: 11px;
-                                                        opacity: 0.85;
-                                                    }
-                                                }
-
+                                            HorizontalLayout {
+                                                spacing: 6px;
                                                 Text {
-                                                    text: repo.last-commit-msg != "" ? repo.last-commit-msg : "(Keine Commit-Nachricht)";
+                                                    text: "⎇ " + (repo.branch != "" ? repo.branch : "HEAD");
                                                     font-size: 11px;
-                                                    font-weight: 600;
-                                                    overflow: elide;
+                                                    font-weight: 700;
+                                                    color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8;
                                                 }
+                                                Rectangle { horizontal-stretch: 1; }
+                                                Text {
+                                                    text: "#" + repo.last-commit-hash;
+                                                    font-size: 11px;
+                                                    font-family: "monospace";
+                                                    font-weight: 700;
+                                                    color: (Palette.color-scheme == ColorScheme.dark) ? #94a3b8 : #64748b;
+                                                }
+                                            }
+
+                                            HorizontalLayout {
+                                                spacing: 6px;
+                                                Text {
+                                                    text: "👤 " + (repo.last-commit-author != "" ? repo.last-commit-author : "Unbekannt");
+                                                    font-size: 11px;
+                                                    opacity: 0.85;
+                                                    overflow: elide;
+                                                    horizontal-stretch: 1;
+                                                }
+                                                Text {
+                                                    text: "🕒 " + repo.last-commit + (repo.last-commit-time != "" ? (" · " + repo.last-commit-time) : "");
+                                                    font-size: 11px;
+                                                    opacity: 0.85;
+                                                }
+                                            }
+
+                                            Text {
+                                                text: repo.last-commit-msg != "" ? repo.last-commit-msg : "(Keine Commit-Nachricht)";
+                                                font-size: 11px;
+                                                font-weight: 600;
+                                                overflow: elide;
                                             }
                                         }
                                     }
@@ -1917,41 +1920,30 @@ export component MainWindow inherits Window {
                                         }
 
                                         // Tooltip-Card mit Pfaden beim Hovern
-                                        if locations-ta.has-hover && repo.locations-preview != "": Rectangle {
-                                            x: -140px;
-                                            y: idx < 2 ? 36px : -90px;
-                                            width: 360px;
-                                            min-height: 50px;
-                                            z: 1000;
-                                            background: (Palette.color-scheme == ColorScheme.dark) ? #1e293b : #ffffff;
-                                            border-width: 1.5px;
-                                            border-color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #2a7fd4;
-                                            border-radius: 6px;
-                                            drop-shadow-blur: 8px;
-                                            drop-shadow-color: #00000060;
-                                            drop-shadow-offset-y: 2px;
+                                        if locations-ta.has-hover && repo.locations-preview != "": HoverCard {
+                                            row-index: idx;
+                                            card-x: -240px;
+                                            card-width: 360px;
+                                            card-height: 110px;
 
-                                            VerticalLayout {
-                                                padding: 8px;
-                                                spacing: 4px;
-
-                                                HorizontalLayout {
-                                                    spacing: 6px;
-                                                    Text {
-                                                        text: "📍 Speicherorte (" + repo.locations + ")";
-                                                        font-size: 11px;
-                                                        font-weight: 700;
-                                                        color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8;
-                                                    }
-                                                }
-
-                                                Rectangle { height: 1px; background: #80808022; }
-
+                                            HorizontalLayout {
+                                                spacing: 6px;
                                                 Text {
-                                                    text: repo.locations-preview;
+                                                    text: "📍 Speicherorte (" + repo.locations + ")";
                                                     font-size: 11px;
-                                                    wrap: word-wrap;
+                                                    font-weight: 700;
+                                                    color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8;
                                                 }
+                                            }
+
+                                            Rectangle { height: 1px; background: #80808022; }
+
+                                            Text {
+                                                text: repo.locations-preview;
+                                                font-size: 11px;
+                                                wrap: word-wrap;
+                                                vertical-stretch: 1;
+                                                overflow: elide;
                                             }
                                         }
                                     }
@@ -2051,8 +2043,8 @@ export component MainWindow inherits Window {
                 }
             }
 
-            // Höhenverstellbarer Splitter-Balken zwischen Repo-Tabelle und Detailansicht
-            Rectangle {
+            // Höhenverstellbarer Splitter-Balken zwischen Repo-Tabelle und Detailansicht (nur wenn geöffnet)
+            if root.detail-panel-height > 0px: Rectangle {
                 height: 8px;
                 background: splitter-ta.has-hover || splitter-ta.pressed ? #2a7fd455 : #80808020;
                 clip: false;
@@ -3043,6 +3035,99 @@ export component MainWindow inherits Window {
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+            }
+
+            // Schlanke 1-Zeilen-Statusleiste für ausgewähltes Repository (Option 3)
+            Rectangle {
+                height: 28px;
+                background: #80808012;
+                border-width: 1px;
+                border-color: #80808020;
+
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    spacing: 10px;
+                    alignment: center;
+
+                    // Klickbarer Infobereich
+                    TouchArea {
+                        horizontal-stretch: 1;
+                        mouse-cursor: pointer;
+                        clicked => {
+                            root.detail-panel-height = root.detail-panel-height > 0px ? 0px : 160px;
+                        }
+
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: start;
+
+                            if root.selected-id != "": HorizontalLayout {
+                                spacing: 8px;
+
+                                Text {
+                                    text: "📍 " + root.selected-name;
+                                    font-size: 12px;
+                                    font-weight: 700;
+                                    vertical-alignment: center;
+                                }
+
+                                if root.selected-remote != "": Text {
+                                    text: "·  ⎇ " + root.selected-remote;
+                                    font-size: 11px;
+                                    opacity: 0.7;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
+
+                                if root.selected-remote == "": Text {
+                                    text: "·  💻 Nur lokal";
+                                    font-size: 11px;
+                                    opacity: 0.6;
+                                    vertical-alignment: center;
+                                }
+
+                                if root.selected-active-loc-name != "": Text {
+                                    text: "·  [" + root.selected-active-loc-name + "]";
+                                    font-size: 11px;
+                                    opacity: 0.6;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    text: root.selected-dirty-count > 0 ? ("·  ✎ " + root.selected-dirty-count + " geändert") : "·  ✓ sauber";
+                                    font-size: 11px;
+                                    font-weight: root.selected-dirty-count > 0 ? 700 : 400;
+                                    color: root.selected-dirty-count > 0 ? #d98e04 : #2e9e5b;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    text: (root.selected-ahead-count > 0 || root.selected-behind-count > 0) ?
+                                          ("·  " + (root.selected-ahead-count > 0 ? ("↑" + root.selected-ahead-count + " ") : "") + (root.selected-behind-count > 0 ? ("↓" + root.selected-behind-count) : "")) :
+                                          "·  ✓ synchron";
+                                    font-size: 11px;
+                                    color: (root.selected-ahead-count > 0 || root.selected-behind-count > 0) ? #2a7fd4 : #2e9e5b;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            if root.selected-id == "": Text {
+                                text: "💡 Kein Repository ausgewählt (Klicke auf ein Repo in der Tabelle)";
+                                font-size: 11px;
+                                opacity: 0.55;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    Button {
+                        text: root.detail-panel-height > 0px ? "Details schließen ▼" : "Details anzeigen ▲";
+                        clicked => {
+                            root.detail-panel-height = root.detail-panel-height > 0px ? 0px : 160px;
                         }
                     }
                 }
