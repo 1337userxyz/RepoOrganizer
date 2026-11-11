@@ -107,4 +107,43 @@ pub fn register(ui: &MainWindow, state: &Shared, smart_sync_win: &SmartSyncWindo
             }
         });
     }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_pull_repo(move |repo: SharedString| {
+            if let Some(ui) = weak.upgrade() {
+                let jobs = jobs_for(&state.lock().unwrap(), None, Some(&repo));
+                run_actions(&ui, &state, jobs, "pull", String::new());
+            }
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_push_repo(move |repo: SharedString| {
+            if let Some(ui) = weak.upgrade() {
+                let jobs = jobs_for(&state.lock().unwrap(), None, Some(&repo));
+                run_actions(&ui, &state, jobs, "push", String::new());
+            }
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_reset_repo(move |repo: SharedString| {
+            if let Some(ui) = weak.upgrade() {
+                let jobs = jobs_for(&state.lock().unwrap(), None, Some(&repo));
+                run_actions(&ui, &state, jobs, "reset", String::new());
+            }
+        });
+    }
+    {
+        let (weak, _state) = (ui.as_weak(), state.clone());
+        ui.on_commit_repo(move |repo: SharedString| {
+            if let Some(ui) = weak.upgrade() {
+                ui.invoke_select(repo);
+                if ui.get_detail_panel_height() < 140.0 {
+                    ui.set_detail_panel_height(140.0);
+                }
+                ui.set_detail_tab(0);
+            }
+        });
+    }
 }

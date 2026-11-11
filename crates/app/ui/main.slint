@@ -129,9 +129,11 @@ export struct RepoRow {
     error-msg: string,
     kind: int,
     branch: string,
-    sync-info: string,
-    sync-kind: int,
     last-commit: string,
+    last-commit-time: string,
+    last-commit-hash: string,
+    last-commit-author: string,
+    last-commit-msg: string,
     commits: string,
     files: string,
     size: string,
@@ -139,8 +141,15 @@ export struct RepoRow {
     build-size: string,
     build-kind: int,
     locations: int,
+    locations-preview: string,
     favorite: bool,
     has-drift: bool,
+    ahead-count: int,
+    behind-count: int,
+    dirty-count: int,
+    stash-count: int,
+    can-clean: bool,
+    dirty-files-preview: string,
 }
 
 global Kinds {
@@ -1228,6 +1237,7 @@ export component MainWindow inherits Window {
     in property <string> selected-active-loc-name: "";
     in property <int> selected-dirty-count: 0;
     in property <int> selected-ahead-count: 0;
+    in property <int> selected-behind-count: 0;
     in property <[DirtyFileRow]> selected-dirty-files;
     in property <string> selected-dirty-summary: "";
     in property <string> selected-dirty-headline: "";
@@ -1236,7 +1246,7 @@ export component MainWindow inherits Window {
     in-out property <bool> show-dirty-files: false;
 
     // Dynamische Höhe des Detail-Panels & Aktivierung einzelner Detailansichten
-    in-out property <length> detail-panel-height: 180px;
+    in-out property <length> detail-panel-height: 140px;
     in-out property <string> active-detail-location-id: "";
     in-out property <bool> all-locations-expanded: false;
 
@@ -1262,7 +1272,6 @@ export component MainWindow inherits Window {
     in-out property <int> col-status-filter: 0;
     in property <[string]> branch-options: ["Branch: Alle"];
     in-out property <string> col-branch-filter: "Branch: Alle";
-    in-out property <int> col-sync-filter: 0;
     in-out property <int> col-commit-filter: 0;
     in-out property <int> col-remote-filter: 0;
 
@@ -1277,6 +1286,10 @@ export component MainWindow inherits Window {
     callback derive-name(string) -> string;
     callback derive-url(string, string) -> string;
     callback add-repo(string, string, string);
+    callback pull-repo(string);
+    callback push-repo(string);
+    callback reset-repo(string);
+    callback commit-repo(string);
     callback location-action(string, string);
     callback commit(string, string);
     callback commit-and-push(string, string);
@@ -1311,7 +1324,7 @@ export component MainWindow inherits Window {
     in-out property <string> disk-info: "";
 
     property <bool> adding: false;
-    property <bool> has-col-filter: root.col-repo-filter != 0 || root.col-status-filter != 0 || root.col-sync-filter != 0 || root.col-commit-filter >= 2 || root.col-remote-filter != 0 || (root.col-branch-filter != "" && root.col-branch-filter != "Branch: Alle");
+    property <bool> has-col-filter: root.col-repo-filter != 0 || root.col-status-filter != 0 || root.col-commit-filter >= 2 || root.col-remote-filter != 0 || (root.col-branch-filter != "" && root.col-branch-filter != "Branch: Alle");
 
     VerticalLayout {
         // Obere Haupt-App-Leiste: Titel, Ansichten-Auswahl und Werkzeuge
@@ -1435,7 +1448,6 @@ export component MainWindow inherits Window {
                             root.col-repo-filter = 0;
                             root.col-status-filter = 0;
                             root.col-branch-filter = "Branch: Alle";
-                            root.col-sync-filter = 0;
                             if (root.col-commit-filter >= 2) { root.col-commit-filter = 0; }
                             root.col-remote-filter = 0;
                             root.column-filter-changed();
@@ -1450,6 +1462,43 @@ export component MainWindow inherits Window {
                         clicked => { root.open-smart-sync(); }
                     }
                     Button { text: "Repo hinzufügen"; clicked => { root.adding = !root.adding; } }
+                    Rectangle { width: 1px; height: 20px; background: #80808033; y: (parent.height - self.height) / 2; }
+                    Button {
+                        text: "Commit";
+                        enabled: root.selected-id != "" && root.selected-dirty-count > 0 && !root.busy;
+                        clicked => {
+                            if root.detail-panel-height < 140px { root.detail-panel-height = 140px; }
+                            root.detail-tab = 0;
+                            root.commit-repo(root.selected-id);
+                        }
+                    }
+                    Button {
+                        text: "Reset";
+                        enabled: root.selected-id != "" && root.selected-dirty-count > 0 && !root.busy;
+                        clicked => { root.reset-repo(root.selected-id); }
+                    }
+                    Button {
+                        text: root.selected-behind-count > 0 ? ("Pull (" + root.selected-behind-count + ")") : "Pull";
+                        enabled: root.selected-id != "" && root.selected-behind-count > 0 && !root.busy;
+                        primary: root.selected-behind-count > 0;
+                        clicked => { root.pull-repo(root.selected-id); }
+                    }
+                    Button {
+                        text: root.selected-ahead-count > 0 ? ("Push (" + root.selected-ahead-count + ")") : "Push";
+                        enabled: root.selected-id != "" && root.selected-ahead-count > 0 && !root.busy;
+                        primary: root.selected-ahead-count > 0;
+                        clicked => { root.push-repo(root.selected-id); }
+                    }
+                    Button {
+                        text: "Clean";
+                        enabled: root.selected-id != "" && !root.busy;
+                        clicked => { root.clean-repo-builds(root.selected-id); }
+                    }
+                    Rectangle { width: 1px; height: 20px; background: #80808033; y: (parent.height - self.height) / 2; }
+                    Button {
+                        text: root.detail-panel-height > 0px ? "Details ▼" : "Details ▲";
+                        clicked => { root.detail-panel-height = root.detail-panel-height > 0px ? 0px : 140px; }
+                    }
                 }
 
                 if root.adding: HorizontalLayout {
@@ -1530,8 +1579,8 @@ export component MainWindow inherits Window {
                                 }
                                 ColSep {}
                                 ComboBox {
-                                    width: 145px;
-                                    model: ["Remote: Alle", "✓ Synchron", "↑ Zu senden (Push)", "↓ Zu holen (Pull)", "⇄ Divergiert", "💻 Nur lokal", "⭘ Offline", "⚠ Fehler"];
+                                    width: 175px;
+                                    model: ["Status: Alle", "✓ Synchron", "↑ Zu senden (Push)", "↓ Zu holen (Pull)", "✎ Geändert (Lokal)", "📦 Mit Stash", "⇄ Divergiert", "💻 Nur lokal", "⭘ Offline", "⚠ Fehler"];
                                     current-index <=> root.col-status-filter;
                                     selected => { root.column-filter-changed(); }
                                 }
@@ -1540,13 +1589,6 @@ export component MainWindow inherits Window {
                                     width: 95px;
                                     model: root.branch-options;
                                     current-value <=> root.col-branch-filter;
-                                    selected => { root.column-filter-changed(); }
-                                }
-                                ColSep {}
-                                ComboBox {
-                                    width: 140px;
-                                    model: ["Änderungen: Alle", "✓ Sauber", "✎ Geändert", "📦 Mit Stash"];
-                                    current-index <=> root.col-sync-filter;
                                     selected => { root.column-filter-changed(); }
                                 }
                                 ColSep {}
@@ -1596,6 +1638,7 @@ export component MainWindow inherits Window {
                             vertical-stretch: 1;
                             for repo[idx] in root.repos: Rectangle {
                                 height: 36px;
+                                z: (status-ta.has-hover || commit-ta.has-hover || locations-ta.has-hover) ? 100 : 0;
                                 background: repo.id == root.selected-id
                                     ? #2a7fd42e
                                     : (rta.has-hover ? #80808020 : (Math.mod(idx, 2) == 1 ? #8080800c : transparent));
@@ -1628,14 +1671,78 @@ export component MainWindow inherits Window {
                                     }
                                     ColSep {}
 
-                                    // 2. Remote-Sync Badge
-                                    Rectangle {
-                                        width: 145px;
-                                        Badge {
-                                            x: 0;
-                                            y: (parent.height - self.height) / 2;
-                                            text: repo.status;
-                                            kind: repo.kind;
+                                    // 2. Status & Änderungen Badge (mit Hover-Dateiliste)
+                                    status-box := Rectangle {
+                                        width: 175px;
+                                        height: parent.height;
+                                        clip: false;
+
+                                        HorizontalLayout {
+                                            spacing: 4px;
+                                            alignment: start;
+                                            Badge {
+                                                y: (parent.height - self.height) / 2;
+                                                text: repo.status;
+                                                kind: repo.kind;
+                                            }
+                                            if repo.dirty-count > 0: Text {
+                                                text: "ℹ";
+                                                font-size: 11px;
+                                                font-weight: 700;
+                                                opacity: status-ta.has-hover ? 1.0 : 0.45;
+                                                color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+
+                                        status-ta := TouchArea {
+                                            mouse-cursor: pointer;
+                                        }
+
+                                        // Tooltip-Card mit Dateiliste beim Hovern
+                                        if status-ta.has-hover && (repo.dirty-count > 0 || repo.dirty-files-preview != ""): Rectangle {
+                                            x: 0px;
+                                            y: idx < 2 ? 36px : -150px;
+                                            width: 380px;
+                                            height: 144px;
+                                            z: 1000;
+                                            background: (Palette.color-scheme == ColorScheme.dark) ? #1e293b : #ffffff;
+                                            border-width: 1.5px;
+                                            border-color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #2a7fd4;
+                                            border-radius: 6px;
+                                            drop-shadow-blur: 8px;
+                                            drop-shadow-color: #00000060;
+                                            drop-shadow-offset-y: 2px;
+
+                                            VerticalLayout {
+                                                padding: 8px;
+                                                spacing: 4px;
+
+                                                HorizontalLayout {
+                                                    spacing: 6px;
+                                                    Text {
+                                                        text: repo.dirty-count > 0 ? ("✎ " + repo.dirty-count + " uncommittete Datei" + (repo.dirty-count == 1 ? "" : "en")) : "✓ Arbeitskopie ist sauber";
+                                                        font-size: 11px;
+                                                        font-weight: 700;
+                                                        color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8;
+                                                        horizontal-stretch: 1;
+                                                    }
+                                                    if repo.stash-count > 0: Badge {
+                                                        text: "📦 " + repo.stash-count + " Stash";
+                                                        kind: 2;
+                                                    }
+                                                }
+
+                                                Rectangle { height: 1px; background: #80808022; }
+
+                                                Text {
+                                                    text: repo.dirty-files-preview;
+                                                    font-size: 11px;
+                                                    wrap: word-wrap;
+                                                    vertical-stretch: 1;
+                                                    overflow: elide;
+                                                }
+                                            }
                                         }
                                     }
                                     ColSep {}
@@ -1650,25 +1757,99 @@ export component MainWindow inherits Window {
                                     }
                                     ColSep {}
 
-                                    // 4. Arbeitskopie (Dateien auf Festplatte)
-                                    Text {
-                                        text: repo.sync-info;
-                                        font-size: 12px;
-                                        font-weight: repo.sync-kind == 2 ? 600 : 400;
-                                        color: repo.sync-kind == 2 ? #d98e04 : #2e9e5b;
-                                        width: 140px;
-                                        vertical-alignment: center;
-                                        overflow: elide;
-                                    }
-                                    ColSep {}
-
-                                    // 5. Letzter Commit
-                                    Text {
-                                        text: repo.last-commit;
-                                        font-size: 12px;
+                                    // 5. Letzter Commit (Hover & Klick für Details)
+                                    commit-box := Rectangle {
                                         width: 150px;
-                                        vertical-alignment: center;
-                                        overflow: elide;
+                                        height: parent.height;
+                                        clip: false;
+
+                                        HorizontalLayout {
+                                            spacing: 4px;
+                                            alignment: start;
+                                            Text {
+                                                text: repo.last-commit;
+                                                font-size: 12px;
+                                                font-weight: commit-ta.has-hover ? 700 : 400;
+                                                color: commit-ta.has-hover ? ((Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8) : (Palette.color-scheme == ColorScheme.dark ? #f1f5f9 : #0f172a);
+                                                vertical-alignment: center;
+                                                overflow: elide;
+                                                horizontal-stretch: 1;
+                                            }
+                                            if repo.last-commit-hash != "": Text {
+                                                text: "ℹ";
+                                                font-size: 11px;
+                                                font-weight: 700;
+                                                opacity: commit-ta.has-hover ? 1.0 : 0.4;
+                                                color: commit-ta.has-hover ? #38bdf8 : #808080;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+
+                                        commit-ta := TouchArea {
+                                            mouse-cursor: pointer;
+                                        }
+
+                                        // Tooltip-Card mit Commit-Details beim Hovern
+                                        if commit-ta.has-hover && repo.last-commit-hash != "": Rectangle {
+                                            x: 0px;
+                                            y: idx < 2 ? 36px : -94px;
+                                            width: 350px;
+                                            height: 90px;
+                                            z: 1000;
+                                            background: (Palette.color-scheme == ColorScheme.dark) ? #1e293b : #ffffff;
+                                            border-width: 1.5px;
+                                            border-color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #2a7fd4;
+                                            border-radius: 6px;
+                                            drop-shadow-blur: 8px;
+                                            drop-shadow-color: #00000060;
+                                            drop-shadow-offset-y: 2px;
+
+                                            VerticalLayout {
+                                                padding: 8px;
+                                                spacing: 4px;
+
+                                                HorizontalLayout {
+                                                    spacing: 6px;
+                                                    Text {
+                                                        text: "⎇ " + (repo.branch != "" ? repo.branch : "HEAD");
+                                                        font-size: 11px;
+                                                        font-weight: 700;
+                                                        color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8;
+                                                    }
+                                                    Rectangle { horizontal-stretch: 1; }
+                                                    Text {
+                                                        text: "#" + repo.last-commit-hash;
+                                                        font-size: 11px;
+                                                        font-family: "monospace";
+                                                        font-weight: 700;
+                                                        color: (Palette.color-scheme == ColorScheme.dark) ? #94a3b8 : #64748b;
+                                                    }
+                                                }
+
+                                                HorizontalLayout {
+                                                    spacing: 6px;
+                                                    Text {
+                                                        text: "👤 " + (repo.last-commit-author != "" ? repo.last-commit-author : "Unbekannt");
+                                                        font-size: 11px;
+                                                        opacity: 0.85;
+                                                        overflow: elide;
+                                                        horizontal-stretch: 1;
+                                                    }
+                                                    Text {
+                                                        text: "🕒 " + repo.last-commit + (repo.last-commit-time != "" ? (" · " + repo.last-commit-time) : "");
+                                                        font-size: 11px;
+                                                        opacity: 0.85;
+                                                    }
+                                                }
+
+                                                Text {
+                                                    text: repo.last-commit-msg != "" ? repo.last-commit-msg : "(Keine Commit-Nachricht)";
+                                                    font-size: 11px;
+                                                    font-weight: 600;
+                                                    overflow: elide;
+                                                }
+                                            }
+                                        }
                                     }
                                     ColSep {}
 
@@ -1714,13 +1895,65 @@ export component MainWindow inherits Window {
                                     }
                                     ColSep {}
 
-                                    // 9. Orte
-                                    Text {
-                                        text: repo.locations;
-                                        font-size: 12px;
+                                    // 9. Orte (mit Hover-Pfadliste)
+                                    locations-box := Rectangle {
                                         width: 36px;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
+                                        height: parent.height;
+                                        clip: false;
+
+                                        HorizontalLayout {
+                                            alignment: center;
+                                            Text {
+                                                text: repo.locations;
+                                                font-size: 12px;
+                                                font-weight: locations-ta.has-hover ? 700 : 400;
+                                                color: locations-ta.has-hover ? ((Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8) : (Palette.color-scheme == ColorScheme.dark ? #f1f5f9 : #0f172a);
+                                                vertical-alignment: center;
+                                            }
+                                        }
+
+                                        locations-ta := TouchArea {
+                                            mouse-cursor: pointer;
+                                        }
+
+                                        // Tooltip-Card mit Pfaden beim Hovern
+                                        if locations-ta.has-hover && repo.locations-preview != "": Rectangle {
+                                            x: -140px;
+                                            y: idx < 2 ? 36px : -90px;
+                                            width: 360px;
+                                            min-height: 50px;
+                                            z: 1000;
+                                            background: (Palette.color-scheme == ColorScheme.dark) ? #1e293b : #ffffff;
+                                            border-width: 1.5px;
+                                            border-color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #2a7fd4;
+                                            border-radius: 6px;
+                                            drop-shadow-blur: 8px;
+                                            drop-shadow-color: #00000060;
+                                            drop-shadow-offset-y: 2px;
+
+                                            VerticalLayout {
+                                                padding: 8px;
+                                                spacing: 4px;
+
+                                                HorizontalLayout {
+                                                    spacing: 6px;
+                                                    Text {
+                                                        text: "📍 Speicherorte (" + repo.locations + ")";
+                                                        font-size: 11px;
+                                                        font-weight: 700;
+                                                        color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8;
+                                                    }
+                                                }
+
+                                                Rectangle { height: 1px; background: #80808022; }
+
+                                                Text {
+                                                    text: repo.locations-preview;
+                                                    font-size: 11px;
+                                                    wrap: word-wrap;
+                                                }
+                                            }
+                                        }
                                     }
                                     ColSep {}
 
@@ -1765,6 +1998,44 @@ export component MainWindow inherits Window {
                                             horizontal-stretch: 1;
                                             overflow: elide;
                                         }
+
+                                        // Schnell-Aktionen in der Zeile: Commit, Reset, Pull, Push, Clean
+                                        HorizontalLayout {
+                                            spacing: 4px;
+                                            alignment: end;
+                                            Button {
+                                                text: "Commit";
+                                                enabled: repo.dirty-count > 0 && !root.busy;
+                                                clicked => {
+                                                    root.select(repo.id);
+                                                    if root.detail-panel-height < 140px {
+                                                        root.detail-panel-height = 140px;
+                                                    }
+                                                    root.detail-tab = 0;
+                                                    root.commit-repo(repo.id);
+                                                }
+                                            }
+                                            Button {
+                                                text: "Reset";
+                                                enabled: repo.dirty-count > 0 && !root.busy;
+                                                clicked => { root.reset-repo(repo.id); }
+                                            }
+                                            Button {
+                                                text: repo.behind-count > 0 ? ("Pull (" + repo.behind-count + ")") : "Pull";
+                                                enabled: repo.remote != "" && repo.behind-count > 0 && !root.busy;
+                                                clicked => { root.pull-repo(repo.id); }
+                                            }
+                                            Button {
+                                                text: repo.ahead-count > 0 ? ("Push (" + repo.ahead-count + ")") : "Push";
+                                                enabled: repo.remote != "" && repo.ahead-count > 0 && !root.busy;
+                                                clicked => { root.push-repo(repo.id); }
+                                            }
+                                            Button {
+                                                text: "Clean";
+                                                enabled: repo.can-clean && !root.busy;
+                                                clicked => { root.clean-repo-builds(repo.id); }
+                                            }
+                                        }
                                     }
                                 }
 
@@ -1801,30 +2072,34 @@ export component MainWindow inherits Window {
                     moved => {
                         if self.pressed {
                             let delta = self.mouse-y - self.pressed-y;
-                            root.detail-panel-height = max(110px, min(root.height - 200px, root.detail-panel-height - delta));
+                            root.detail-panel-height = max(0px, min(root.height - 200px, root.detail-panel-height - delta));
                         }
                     }
                     double-clicked => {
-                        if root.detail-panel-height < 220px {
-                            root.detail-panel-height = 320px;
-                        } else if root.detail-panel-height < 450px {
-                            root.detail-panel-height = min(620px, root.height - 200px);
-                        } else {
+                        if root.detail-panel-height < 60px {
                             root.detail-panel-height = 140px;
+                        } else if root.detail-panel-height < 200px {
+                            root.detail-panel-height = 280px;
+                        } else {
+                            root.detail-panel-height = 0px;
                         }
                     }
                 }
             }
 
-            // Unten: Dauerhaft sichtbares Detail-Panel über die volle Breite
-            Rectangle {
+            // Unten: Detail-Panel über die volle Breite (ein-/ausblendbar)
+            if root.detail-panel-height > 0px: Rectangle {
                 height: root.detail-panel-height;
                 background: #80808012;
                 border-width: 1px;
                 border-color: #80808028;
+                clip: true;
                 VerticalLayout {
-                    padding: 12px;
-                    spacing: 8px;
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    padding-top: 6px;
+                    padding-bottom: 6px;
+                    spacing: 5px;
                     // Kopfzeile: Name, Remote, Favorit, Tabs
                     HorizontalLayout {
                         spacing: 10px;
@@ -1859,16 +2134,20 @@ export component MainWindow inherits Window {
 
                         // Schnelle Größenanpassung des Detail-Panels
                         Button {
+                            text: "✕";
+                            clicked => { root.detail-panel-height = 0px; }
+                        }
+                        Button {
                             text: "⯆";
-                            clicked => { root.detail-panel-height = 140px; }
+                            clicked => { root.detail-panel-height = 110px; }
                         }
                         Button {
                             text: "⯀";
-                            clicked => { root.detail-panel-height = 280px; }
+                            clicked => { root.detail-panel-height = 180px; }
                         }
                         Button {
                             text: "⯅";
-                            clicked => { root.detail-panel-height = max(450px, root.height - 240px); }
+                            clicked => { root.detail-panel-height = max(350px, root.height - 240px); }
                         }
                     }
 

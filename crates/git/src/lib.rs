@@ -69,6 +69,20 @@ impl CliGit {
         self.run(repo, &["log", "-1", "--format=%ct"]).ok()?.trim().parse().ok()
     }
 
+    /// Details des letzten Commits: (Timestamp, Short-Hash, Author, Message).
+    pub fn last_commit_info(&self, repo: &Path) -> Option<(i64, String, String, String)> {
+        let out = self.run(repo, &["log", "-1", "--format=%ct%x1f%h%x1f%an%x1f%s"]).ok()?;
+        let parts: Vec<&str> = out.trim().split('\x1f').collect();
+        if parts.is_empty() || parts[0].is_empty() {
+            return None;
+        }
+        let ts = parts[0].parse::<i64>().ok()?;
+        let hash = parts.get(1).unwrap_or(&"").trim().to_string();
+        let author = parts.get(2).unwrap_or(&"").trim().to_string();
+        let msg = parts.get(3).unwrap_or(&"").trim().to_string();
+        Some((ts, hash, author, msg))
+    }
+
     /// Gesamtanzahl Commits auf HEAD.
     pub fn commit_count(&self, repo: &Path) -> u32 {
         self.run(repo, &["rev-list", "--count", "HEAD"]).ok().and_then(|s| s.trim().parse().ok()).unwrap_or(0)
@@ -160,6 +174,16 @@ impl CliGit {
             return Err(GitError::Failed { args: "commit".into(), stderr: "Commit-Nachricht fehlt".into() });
         }
         self.run_all(repo, &["commit", "-m", message])
+    }
+
+    pub fn reset_hard(&self, repo: &Path) -> Result<String, GitError> {
+        let out1 = self.run_all(repo, &["reset", "--hard", "HEAD"])?;
+        let out2 = self.run_all(repo, &["clean", "-fd"]).unwrap_or_default();
+        if out2.is_empty() {
+            Ok(out1)
+        } else {
+            Ok(format!("{out1}\n{out2}"))
+        }
     }
 
     pub fn stash(&self, repo: &Path) -> Result<String, GitError> {
@@ -379,6 +403,9 @@ impl GitBackend for CliGit {
             last_fetch: None,
             last_pull: None,
             last_commit: None,
+            last_commit_hash: None,
+            last_commit_author: None,
+            last_commit_msg: None,
             commit_count: 0,
             file_count: 0,
             size_kb: 0,
@@ -419,7 +446,14 @@ impl GitBackend for CliGit {
                 snap.stash_count = self.stash_count(repo);
                 snap.last_fetch = self.last_fetch(repo);
                 snap.last_pull = self.last_pull(repo);
-                snap.last_commit = self.last_commit(repo);
+                if let Some((ts, hash, author, msg)) = self.last_commit_info(repo) {
+                    snap.last_commit = Some(ts);
+                    snap.last_commit_hash = Some(hash);
+                    snap.last_commit_author = Some(author);
+                    snap.last_commit_msg = Some(msg);
+                } else {
+                    snap.last_commit = self.last_commit(repo);
+                }
                 snap.commit_count = self.commit_count(repo);
                 snap.file_count = self.file_count(repo);
                 snap.size_kb = self.git_size(repo) / 1024;

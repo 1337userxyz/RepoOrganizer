@@ -188,6 +188,15 @@ pub fn format_commit_date(ts: Option<i64>, now: i64) -> String {
     format!("{d:02}.{m:02}.{y:04} ({})", ago(Some(ts), now))
 }
 
+pub fn format_commit_time(ts: Option<i64>) -> String {
+    let Some(ts) = ts else { return String::new() };
+    let day_secs = ts.rem_euclid(86400);
+    let hour = day_secs / 3600;
+    let min = (day_secs % 3600) / 60;
+    let sec = day_secs % 60;
+    format!("{hour:02}:{min:02}:{sec:02} Uhr")
+}
+
 /// Formatiert eine Datei-Änderungszeit mit Uhrzeit (und Datum bei älteren Änderungen) plus relativer Zeit.
 pub fn format_mtime(ts: Option<i64>, now: i64) -> String {
     let Some(ts) = ts else { return "–".into() };

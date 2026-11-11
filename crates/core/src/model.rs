@@ -79,6 +79,12 @@ pub struct Snapshot {
     #[serde(default)]
     pub last_commit: Option<i64>,
     #[serde(default)]
+    pub last_commit_hash: Option<String>,
+    #[serde(default)]
+    pub last_commit_author: Option<String>,
+    #[serde(default)]
+    pub last_commit_msg: Option<String>,
+    #[serde(default)]
     pub commit_count: u32,
     #[serde(default)]
     pub file_count: u32,
@@ -132,6 +138,9 @@ impl Snapshot {
             last_fetch: None,
             last_pull: None,
             last_commit: None,
+            last_commit_hash: None,
+            last_commit_author: None,
+            last_commit_msg: None,
             commit_count: 0,
             file_count: 0,
             size_kb: 0,

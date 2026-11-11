@@ -45,7 +45,6 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
     let col_repo = ui.get_col_repo_filter();
     let col_status = ui.get_col_status_filter();
     let col_branch = ui.get_col_branch_filter().to_string();
-    let col_sync = ui.get_col_sync_filter();
     let col_commit = ui.get_col_commit_filter();
     let col_remote = ui.get_col_remote_filter();
 
@@ -78,25 +77,18 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
                 1 => matches!(status, Status::UpToDate) && ahead == 0 && behind == 0 && dirty == 0,
                 2 => ahead > 0,
                 3 => behind > 0,
-                4 => (ahead > 0 && behind > 0) || matches!(status, Status::Diverged),
-                5 => eff_remote.is_empty(),
-                6 => matches!(status, Status::Unavailable),
-                7 => matches!(status, Status::Error(_) | Status::NotARepo),
+                4 => dirty > 0,
+                5 => stashes > 0,
+                6 => (ahead > 0 && behind > 0) || matches!(status, Status::Diverged),
+                7 => eff_remote.is_empty(),
+                8 => matches!(status, Status::Unavailable),
+                9 => matches!(status, Status::Error(_) | Status::NotARepo),
                 _ => true,
             };
             if !status_ok {
                 return None;
             }
             if !col_branch.is_empty() && col_branch != "Branch: Alle" && branch != col_branch {
-                return None;
-            }
-            let sync_ok = match col_sync {
-                1 => dirty == 0,
-                2 => dirty > 0,
-                3 => stashes > 0,
-                _ => true,
-            };
-            if !sync_ok {
                 return None;
             }
             let commit_ok = match col_commit {
@@ -147,11 +139,14 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
     for (r, last_c) in &filtered {
         let status = repo_status(st, &r.id);
         let snaps: Vec<&Snapshot> = st.shared.locations_of(&r.id).filter_map(|l| st.snaps.get(&l.id)).collect();
+        let best_snap = snaps.iter().max_by_key(|s| s.last_commit.unwrap_or(0));
+        let commit_hash = best_snap.and_then(|s| s.last_commit_hash.as_deref()).unwrap_or("");
+        let commit_author = best_snap.and_then(|s| s.last_commit_author.as_deref()).unwrap_or("");
+        let commit_msg = best_snap.and_then(|s| s.last_commit_msg.as_deref()).unwrap_or("");
         let branch = snaps.iter().find_map(|s| s.branch.clone()).unwrap_or_default();
         let ahead = snaps.iter().map(|s| s.ahead).max().unwrap_or(0);
         let behind = snaps.iter().map(|s| s.behind).max().unwrap_or(0);
         let dirty = snaps.iter().map(|s| s.dirty_files + s.untracked).max().unwrap_or(0);
-        let dirty_locs = snaps.iter().filter(|s| s.dirty_files + s.untracked > 0).count();
         let stashes = snaps.iter().map(|s| s.stash_count).max().unwrap_or(0);
         let commits = snaps.iter().map(|s| s.commit_count).max().unwrap_or(0);
         let files = snaps.iter().map(|s| s.file_count).max().unwrap_or(0);
@@ -174,18 +169,76 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
             .sum();
         let build_size = repoorganizer_core::clean::format_bytes(build_bytes);
         let has_remote = !r.remote_url.is_empty();
+
+        let mut status_display = present::repo_display_status(&status, ahead, behind, dirty, has_remote);
+        if stashes > 0 {
+            status_display.push_str(&format!(" · 📦{stashes}"));
+        }
+
+        let all_details: Vec<_> = st.shared.locations_of(&r.id)
+            .filter_map(|l| st.snaps.get(&l.id))
+            .flat_map(|s| s.dirty_details.iter().cloned())
+            .collect();
+        let mut file_lines = Vec::new();
+        for df in all_details.iter().take(10) {
+            let icon = match df.status_code.trim() {
+                "M" => "✎",
+                "??" => "+",
+                "D" => "×",
+                "A" => "★",
+                "R" => "➜",
+                _ => "•",
+            };
+            file_lines.push(format!("{icon} {} ({})", df.path, df.status_code.trim()));
+        }
+        if all_details.len() > 10 {
+            file_lines.push(format!("… und {} weitere Dateien", all_details.len() - 10));
+        }
+        let dirty_files_preview = if !file_lines.is_empty() {
+            file_lines.join("\n")
+        } else if dirty > 0 {
+            format!("✎ {dirty} uncommittete Datei(en)")
+        } else if stashes > 0 {
+            format!("📦 {stashes} Stashes gesichert (Arbeitsbaum sauber)")
+        } else {
+            "✓ Arbeitskopie ist sauber (keine uncommitteten Änderungen)".into()
+        };
+
+        let locations_preview = st.shared.locations_of(&r.id)
+            .map(|l| {
+                let path_str = match resolved(st, l) {
+                    Resolved::Local(p) => p.display().to_string(),
+                    Resolved::OtherOs => {
+                        let any = l.paths.windows.clone().or(l.paths.linux.clone()).or(l.paths.macos.clone()).unwrap_or_default();
+                        format!("{any} (Anderes OS)")
+                    }
+                };
+                let role = match l.role {
+                    repoorganizer_core::model::Role::Primary => " [Primär]",
+                    repoorganizer_core::model::Role::Backup => " [Backup]",
+                    repoorganizer_core::model::Role::Mirror => " [Mirror]",
+                    repoorganizer_core::model::Role::Worktree => " [Worktree]",
+                };
+                let lbl = if !l.label.is_empty() { format!("{}: ", l.label) } else { String::new() };
+                format!("• {lbl}{path_str}{role}")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
         rows.push(RepoRow {
             id: r.id.as_str().into(),
             name: r.name.as_str().into(),
             remote: r.remote_url.as_str().into(),
             tags: r.tags.join(", ").into(),
-            status: present::repo_display_status(&status, ahead, behind, dirty, has_remote).into(),
+            status: status_display.into(),
             error_msg: present::status_error_short(&status).into(),
             kind: present::repo_display_kind(&status, ahead, behind, dirty, has_remote),
             branch: branch.into(),
-            sync_info: present::working_tree_text_locs(dirty, stashes, dirty_locs).into(),
-            sync_kind: present::working_tree_kind(dirty),
             last_commit: present::format_commit_date(*last_c, now_t).into(),
+            last_commit_time: present::format_commit_time(*last_c).into(),
+            last_commit_hash: commit_hash.into(),
+            last_commit_author: commit_author.into(),
+            last_commit_msg: commit_msg.into(),
             commits: if commits > 0 { commits.to_string().into() } else { "–".into() },
             files: if files > 0 { files.to_string().into() } else { "–".into() },
             size: present::format_size_kb(size_kb).into(),
@@ -193,8 +246,15 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
             build_size: build_size.into(),
             build_kind: present::build_size_kind(build_bytes),
             locations: st.shared.locations_of(&r.id).count() as i32,
+            locations_preview: locations_preview.into(),
             favorite: r.favorite,
             has_drift,
+            ahead_count: ahead as i32,
+            behind_count: behind as i32,
+            dirty_count: dirty as i32,
+            stash_count: stashes as i32,
+            can_clean: build_bytes > 0,
+            dirty_files_preview: dirty_files_preview.into(),
         });
     }
     ui.set_repos(rows.to_slint_model());
@@ -621,11 +681,15 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
         ui.set_selected_dirty_headline(headline.into());
         ui.set_dirty_loc_options(filter_items.to_slint_model());
 
+        let sel_ahead = st.shared.locations_of(&r.id).filter_map(|l| st.snaps.get(&l.id)).map(|s| s.ahead).max().unwrap_or(0);
+        let sel_behind = st.shared.locations_of(&r.id).filter_map(|l| st.snaps.get(&l.id)).map(|s| s.behind).max().unwrap_or(0);
+        ui.set_selected_behind_count(sel_behind as i32);
+
         if let Some((loc_id, name, dirty_count)) = best_dirty_loc {
             ui.set_selected_active_loc_id(loc_id.into());
             ui.set_selected_active_loc_name(name.into());
             ui.set_selected_dirty_count(dirty_count as i32);
-            ui.set_selected_ahead_count(0);
+            ui.set_selected_ahead_count(sel_ahead as i32);
         } else if let Some((loc_id, name, ahead_count)) = best_ahead_loc {
             ui.set_selected_active_loc_id(loc_id.into());
             ui.set_selected_active_loc_name(name.into());
@@ -635,7 +699,7 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
             ui.set_selected_active_loc_id("".into());
             ui.set_selected_active_loc_name("".into());
             ui.set_selected_dirty_count(0);
-            ui.set_selected_ahead_count(0);
+            ui.set_selected_ahead_count(sel_ahead as i32);
         }
 
         // Fehlende Basispfade für das ausgewählte Repo ermitteln
@@ -742,6 +806,7 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
         ui.set_selected_active_loc_name("".into());
         ui.set_selected_dirty_count(0);
         ui.set_selected_ahead_count(0);
+        ui.set_selected_behind_count(0);
         ui.set_missing_base_paths(ModelRc::default());
         ui.set_selected_remote("".into());
         ui.set_suggested_remote("".into());
