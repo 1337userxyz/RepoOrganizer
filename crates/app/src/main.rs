@@ -93,6 +93,8 @@ fn main() -> Result<(), slint::PlatformError> {
     scan_win.window().set_size(slint::LogicalSize::new(920.0, 640.0));
     let settings_win = SettingsWindow::new()?;
     settings_win.window().set_size(slint::LogicalSize::new(980.0, 700.0));
+    let smart_sync_win = SmartSyncWindow::new()?;
+    smart_sync_win.window().set_size(slint::LogicalSize::new(860.0, 660.0));
 
     let state: Shared = Arc::new(Mutex::new(State {
         local,
@@ -122,10 +124,17 @@ fn main() -> Result<(), slint::PlatformError> {
         task: format!("Config: {}", shared_path.display()),
         scan_win: Some(scan_win.as_weak()),
         settings_win: Some(settings_win.as_weak()),
+        smart_sync_win: Some(smart_sync_win.as_weak()),
+        smart_sync_running: false,
+        smart_sync_ticker_title: String::new(),
+        smart_sync_ticker_detail: String::new(),
+        smart_sync_step_current: 0,
+        smart_sync_step_total: 0,
+        smart_sync_log: Vec::new(),
     }));
 
     // Register all controllers
-    controllers::register_all(&ui, &state, &scan_win, &settings_win);
+    controllers::register_all(&ui, &state, &scan_win, &settings_win, &smart_sync_win);
 
     // Hintergrund-Watcher: erkennt externe Änderungen an repos.toml + periodischer Auto-Refresh
     {

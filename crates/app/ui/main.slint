@@ -104,6 +104,14 @@ export struct MissingBasePathRow {
     base-kind: string,
 }
 
+export struct SmartSyncDetailRow {
+    title: string,
+    path: string,
+    info: string,
+    files: string,
+    kind: int,
+}
+
 export struct RepoRow {
     id: string,
     name: string,
@@ -500,6 +508,476 @@ export component SettingsWindow inherits Window {
     }
 }
 
+export component SmartSyncWindow inherits Window {
+    title: "RepoOrganizer – Smart-Sync";
+    min-width: 760px;
+    min-height: 540px;
+    preferred-width: 860px;
+    preferred-height: 660px;
+
+    in property <int> sync-behind-count: 0;
+    in property <int> sync-dirty-count: 0;
+    in property <int> sync-ahead-count: 0;
+    in property <int> sync-missing-bp-count: 0;
+    in property <int> sync-alt-after-push-count: 0;
+    in property <int> sync-alt-standalone-count: 0;
+
+    in property <[SmartSyncDetailRow]> sync-pull-details;
+    in property <[SmartSyncDetailRow]> sync-push-details;
+    in property <[SmartSyncDetailRow]> sync-clone-details;
+    in property <[SmartSyncDetailRow]> sync-alt-after-push-details;
+    in property <[SmartSyncDetailRow]> sync-alt-standalone-details;
+
+    in-out property <bool> sync-opt-pull: true;
+    in-out property <bool> sync-opt-commit-push: true;
+    in-out property <string> sync-commit-msg: "Smart-Sync Update";
+    in-out property <bool> sync-opt-clone-missing: false;
+    in-out property <bool> sync-opt-auto-sync: false;
+
+    // Status-Ticker während und nach der Ausführung
+    in property <bool> sync-running: false;
+    in property <string> sync-ticker-title: "";
+    in property <string> sync-ticker-detail: "";
+    in property <int> sync-step-current: 0;
+    in property <int> sync-step-total: 0;
+    in property <[TaskRow]> sync-ticker-log;
+
+    property <int> push-total-count: root.sync-dirty-count + root.sync-ahead-count;
+    property <bool> eff-commit-push: root.sync-opt-commit-push && root.push-total-count > 0;
+    property <int> active-alt-count: root.sync-alt-standalone-count + (root.eff-commit-push ? root.sync-alt-after-push-count : 0);
+    property <int> sync-selected-actions:
+        (root.sync-opt-pull && root.sync-behind-count > 0 ? root.sync-behind-count : 0)
+        + (root.eff-commit-push ? root.push-total-count : 0)
+        + (root.sync-opt-clone-missing && root.sync-missing-bp-count > 0 ? root.sync-missing-bp-count : 0)
+        + (root.sync-opt-auto-sync && root.active-alt-count > 0 ? root.active-alt-count : 0);
+
+    public function apply-theme(t: string) {
+        Palette.color-scheme = t == "dark" ? ColorScheme.dark : t == "light" ? ColorScheme.light : ColorScheme.unknown;
+    }
+
+    callback run-smart-sync(bool, bool, string, bool, bool);
+    callback close-window();
+
+    VerticalLayout {
+        padding: 18px;
+        spacing: 12px;
+
+        // Kopfzeile
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: "⚡ Smart-Sync: Alles intelligent synchronisieren";
+                font-size: 19px;
+                font-weight: 700;
+                color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            Button {
+                text: "Schließen";
+                clicked => { root.close-window(); }
+            }
+        }
+
+        Text {
+            text: "Wähle aus, welche Aktionen intelligent ausgeführt werden sollen. Datensicherheit garantiert: Uncommittete oder divergierende Stände werden niemals überschrieben.";
+            font-size: 12px;
+            opacity: 0.8;
+            wrap: word-wrap;
+        }
+
+        // Hauptbereich mit den 4 Optionen & Details
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                spacing: 10px;
+                alignment: start;
+
+                // 1. Remote-Updates pullen
+                Rectangle {
+                    background: (root.sync-opt-pull && root.sync-behind-count > 0) ? #2a7fd412 : #8080800a;
+                    border-width: 1px;
+                    border-color: (root.sync-opt-pull && root.sync-behind-count > 0) ? #2a7fd455 : #80808028;
+                    border-radius: 6px;
+                    VerticalLayout {
+                        padding: 10px;
+                        spacing: 6px;
+                        CheckBox {
+                            text: "📥 Remote-Updates pullen (" + root.sync-behind-count + " Standort" + (root.sync-behind-count == 1 ? "" : "e") + " mit neuen Commits von Remote)";
+                            checked <=> root.sync-opt-pull;
+                            enabled: !root.sync-running && root.sync-behind-count > 0;
+                        }
+                        if root.sync-opt-pull && root.sync-behind-count > 0 && root.sync-pull-details.length > 0: VerticalLayout {
+                            padding-left: 26px;
+                            spacing: 4px;
+                            for item in root.sync-pull-details: Rectangle {
+                                background: #80808012;
+                                border-radius: 4px;
+                                HorizontalLayout {
+                                    padding-left: 8px;
+                                    padding-right: 8px;
+                                    padding-top: 4px;
+                                    padding-bottom: 4px;
+                                    spacing: 8px;
+                                    Text {
+                                        text: item.title;
+                                        font-size: 12px;
+                                        font-weight: 700;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: item.path;
+                                        font-size: 11px;
+                                        opacity: 0.75;
+                                        vertical-alignment: center;
+                                        horizontal-stretch: 1;
+                                        overflow: elide;
+                                    }
+                                    Badge {
+                                        text: item.info;
+                                        kind: item.kind;
+                                        y: (parent.height - self.height) / 2;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 2. Lokale Änderungen committen & pushen
+                Rectangle {
+                    background: root.eff-commit-push ? #d98e0412 : #8080800a;
+                    border-width: 1px;
+                    border-color: root.eff-commit-push ? #d98e0455 : #80808028;
+                    border-radius: 6px;
+                    VerticalLayout {
+                        padding: 10px;
+                        spacing: 6px;
+                        CheckBox {
+                            text: "🚀 Lokale Änderungen committen & pushen (" + root.push-total-count + " Standort" + (root.push-total-count == 1 ? "" : "e") + " mit ungesendeten Änderungen)";
+                            checked <=> root.sync-opt-commit-push;
+                            enabled: !root.sync-running && root.push-total-count > 0;
+                            toggled => {
+                                if (root.sync-alt-standalone-count + (root.sync-opt-commit-push && root.push-total-count > 0 ? root.sync-alt-after-push-count : 0)) == 0 {
+                                    root.sync-opt-auto-sync = false;
+                                } else if root.sync-opt-commit-push && root.sync-alt-after-push-count > 0 {
+                                    root.sync-opt-auto-sync = true;
+                                }
+                            }
+                        }
+                        if root.eff-commit-push: VerticalLayout {
+                            padding-left: 26px;
+                            spacing: 6px;
+                            HorizontalLayout {
+                                spacing: 8px;
+                                Text { text: "Commit-Nachricht:"; vertical-alignment: center; font-size: 12px; font-weight: 600; opacity: 0.9; }
+                                LineEdit {
+                                    text <=> root.sync-commit-msg;
+                                    enabled: !root.sync-running;
+                                    placeholder-text: "Nachricht für die Commits (z. B. Smart-Sync Update)…";
+                                    horizontal-stretch: 1;
+                                }
+                            }
+                            if root.sync-push-details.length > 0: VerticalLayout {
+                                spacing: 4px;
+                                for item in root.sync-push-details: Rectangle {
+                                    background: #80808012;
+                                    border-radius: 4px;
+                                    VerticalLayout {
+                                        padding-left: 8px;
+                                        padding-right: 8px;
+                                        padding-top: 5px;
+                                        padding-bottom: 5px;
+                                        spacing: 3px;
+                                        HorizontalLayout {
+                                            spacing: 8px;
+                                            Text {
+                                                text: item.title;
+                                                font-size: 12px;
+                                                font-weight: 700;
+                                                vertical-alignment: center;
+                                            }
+                                            Text {
+                                                text: item.path;
+                                                font-size: 11px;
+                                                opacity: 0.75;
+                                                vertical-alignment: center;
+                                                horizontal-stretch: 1;
+                                                overflow: elide;
+                                            }
+                                            Badge {
+                                                text: item.info;
+                                                kind: item.kind;
+                                                y: (parent.height - self.height) / 2;
+                                            }
+                                        }
+                                        if item.files != "": Text {
+                                            text: item.files;
+                                            font-size: 11px;
+                                            opacity: 0.85;
+                                            wrap: word-wrap;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 3. In fehlende Basispfade klonen
+                Rectangle {
+                    background: (root.sync-opt-clone-missing && root.sync-missing-bp-count > 0) ? #2a7fd412 : #8080800a;
+                    border-width: 1px;
+                    border-color: (root.sync-opt-clone-missing && root.sync-missing-bp-count > 0) ? #2a7fd455 : #80808028;
+                    border-radius: 6px;
+                    VerticalLayout {
+                        padding: 10px;
+                        spacing: 6px;
+                        CheckBox {
+                            text: "📁 In fehlende Basispfade klonen (" + root.sync-missing-bp-count + " fehlende" + (root.sync-missing-bp-count == 1 ? "r" : "") + " Standort" + (root.sync-missing-bp-count == 1 ? "" : "e") + " in RAM-Disk / SSD)";
+                            checked <=> root.sync-opt-clone-missing;
+                            enabled: !root.sync-running && root.sync-missing-bp-count > 0;
+                        }
+                        if root.sync-opt-clone-missing && root.sync-missing-bp-count > 0 && root.sync-clone-details.length > 0: VerticalLayout {
+                            padding-left: 26px;
+                            spacing: 4px;
+                            for item in root.sync-clone-details: Rectangle {
+                                background: #80808012;
+                                border-radius: 4px;
+                                HorizontalLayout {
+                                    padding-left: 8px;
+                                    padding-right: 8px;
+                                    padding-top: 4px;
+                                    padding-bottom: 4px;
+                                    spacing: 8px;
+                                    Text {
+                                        text: item.title;
+                                        font-size: 12px;
+                                        font-weight: 700;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: item.path;
+                                        font-size: 11px;
+                                        opacity: 0.8;
+                                        vertical-alignment: center;
+                                        horizontal-stretch: 1;
+                                        overflow: elide;
+                                    }
+                                    Badge {
+                                        text: item.info;
+                                        kind: item.kind;
+                                        y: (parent.height - self.height) / 2;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 4. Lokale Alternativpfade automatisch angleichen
+                Rectangle {
+                    background: (root.sync-opt-auto-sync && root.active-alt-count > 0) ? #2e9e5b12 : #8080800a;
+                    border-width: 1px;
+                    border-color: (root.sync-opt-auto-sync && root.active-alt-count > 0) ? #2e9e5b55 : #80808028;
+                    border-radius: 6px;
+                    VerticalLayout {
+                        padding: 10px;
+                        spacing: 6px;
+                        CheckBox {
+                            text: "🔄 Lokale Alternativpfade (z. B. SSD ↔ RAM-Disk) automatisch angleichen (" + root.active-alt-count + " Standort" + (root.active-alt-count == 1 ? "" : "e") + ")";
+                            checked <=> root.sync-opt-auto-sync;
+                            enabled: !root.sync-running && root.active-alt-count > 0;
+                        }
+                        if root.sync-opt-auto-sync && root.active-alt-count > 0: VerticalLayout {
+                            padding-left: 26px;
+                            spacing: 4px;
+                            for item in root.sync-alt-standalone-details: Rectangle {
+                                background: #80808012;
+                                border-radius: 4px;
+                                HorizontalLayout {
+                                    padding-left: 8px;
+                                    padding-right: 8px;
+                                    padding-top: 4px;
+                                    padding-bottom: 4px;
+                                    spacing: 8px;
+                                    Text {
+                                        text: item.title;
+                                        font-size: 12px;
+                                        font-weight: 700;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: item.path;
+                                        font-size: 11px;
+                                        opacity: 0.75;
+                                        vertical-alignment: center;
+                                        horizontal-stretch: 1;
+                                        overflow: elide;
+                                    }
+                                    Badge {
+                                        text: item.info;
+                                        kind: item.kind;
+                                        y: (parent.height - self.height) / 2;
+                                    }
+                                }
+                            }
+                            if root.eff-commit-push: VerticalLayout {
+                                spacing: 4px;
+                                for item in root.sync-alt-after-push-details: Rectangle {
+                                    background: #80808012;
+                                    border-radius: 4px;
+                                    HorizontalLayout {
+                                        padding-left: 8px;
+                                        padding-right: 8px;
+                                        padding-top: 4px;
+                                        padding-bottom: 4px;
+                                        spacing: 8px;
+                                        Text {
+                                            text: item.title;
+                                            font-size: 12px;
+                                            font-weight: 700;
+                                            vertical-alignment: center;
+                                        }
+                                        Text {
+                                            text: item.path;
+                                            font-size: 11px;
+                                            opacity: 0.75;
+                                            vertical-alignment: center;
+                                            horizontal-stretch: 1;
+                                            overflow: elide;
+                                        }
+                                        Badge {
+                                            text: item.info;
+                                            kind: item.kind;
+                                            y: (parent.height - self.height) / 2;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Live Status-Ticker während und nach der Ausführung
+        if root.sync-running || root.sync-ticker-title != "" || root.sync-ticker-log.length > 0: Rectangle {
+            background: (Palette.color-scheme == ColorScheme.dark) ? #0f172a : #1e293b0d;
+            border-width: 1.5px;
+            border-color: root.sync-running ? #38bdf8 : #2e9e5b88;
+            border-radius: 6px;
+            VerticalLayout {
+                padding: 10px;
+                spacing: 6px;
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text {
+                        text: root.sync-ticker-title != "" ? root.sync-ticker-title : "Status-Ticker";
+                        font-size: 13px;
+                        font-weight: 700;
+                        color: root.sync-running
+                            ? ((Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8)
+                            : #2e9e5b;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        overflow: elide;
+                    }
+                    if root.sync-step-total > 0: Badge {
+                        text: root.sync-step-current + " / " + root.sync-step-total;
+                        kind: root.sync-running ? 1 : 0;
+                    }
+                }
+
+                if root.sync-ticker-detail != "": Text {
+                    text: root.sync-ticker-detail;
+                    font-size: 11px;
+                    opacity: 0.85;
+                    overflow: elide;
+                }
+
+                if root.sync-step-total > 0: Rectangle {
+                    height: 6px;
+                    background: #80808030;
+                    border-radius: 3px;
+                    clip: true;
+                    Rectangle {
+                        x: 0;
+                        y: 0;
+                        height: parent.height;
+                        width: parent.width * Math.min(1.0, Math.max(0.0, root.sync-step-current / root.sync-step-total));
+                        background: root.sync-running ? #2a7fd4 : #2e9e5b;
+                        border-radius: 3px;
+                    }
+                }
+
+                if root.sync-ticker-log.length > 0: Rectangle {
+                    height: min(140px, max(44px, root.sync-ticker-log.length * 22px));
+                    background: #8080800c;
+                    border-radius: 4px;
+                    ListView {
+                        for entry in root.sync-ticker-log: HorizontalLayout {
+                            height: 22px;
+                            padding-left: 6px;
+                            padding-right: 6px;
+                            spacing: 8px;
+                            Text {
+                                text: entry.state == 0 ? "⏳" : entry.state == 1 ? "✔" : "⚠";
+                                color: Kinds.kind-color(entry.state == 0 ? 1 : entry.state == 1 ? 0 : 2);
+                                width: 18px;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: entry.title;
+                                font-size: 11px;
+                                font-weight: entry.state == 0 ? 700 : 600;
+                                width: 250px;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                            Text {
+                                text: entry.detail;
+                                font-size: 11px;
+                                opacity: 0.8;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                                overflow: elide;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fußzeile mit Aktions-Buttons
+        HorizontalLayout {
+            spacing: 10px;
+            alignment: end;
+            Button {
+                text: root.sync-running
+                    ? "⏳ Synchronisiere…"
+                    : ("🚀 Jetzt synchronisieren" + (root.sync-selected-actions > 0 ? (" (" + root.sync-selected-actions + " Aktionen)") : ""));
+                primary: true;
+                enabled: !root.sync-running && root.sync-selected-actions > 0;
+                clicked => {
+                    root.run-smart-sync(
+                        root.sync-opt-pull && root.sync-behind-count > 0,
+                        root.eff-commit-push,
+                        root.sync-commit-msg,
+                        root.sync-opt-clone-missing && root.sync-missing-bp-count > 0,
+                        root.sync-opt-auto-sync && root.active-alt-count > 0
+                    );
+                }
+            }
+            Button {
+                text: "Schließen";
+                clicked => { root.close-window(); }
+            }
+        }
+    }
+}
+
 export component MainWindow inherits Window {
     title: "RepoOrganizer v0.1.0";
     min-width: 1080px;
@@ -569,21 +1047,14 @@ export component MainWindow inherits Window {
     in property <string> quick-commit-target-id: "";
     in property <string> quick-commit-target-desc: "";
 
-    // Smart-Sync Dialog
-    in-out property <bool> sync-dialog-open: false;
+    // Smart-Sync Zähler für Toolbar
     in property <int> sync-total-actions: 0;
     in property <int> sync-behind-count: 0;
     in property <int> sync-dirty-count: 0;
     in property <int> sync-ahead-count: 0;
     in property <int> sync-missing-bp-count: 0;
-    in-out property <bool> sync-opt-pull: true;
-    in-out property <bool> sync-opt-commit-push: true;
-    in-out property <string> sync-commit-msg: "Smart-Sync Update";
-    in-out property <bool> sync-opt-clone-missing: false;
-    in-out property <bool> sync-opt-auto-sync: true;
-    property <int> sync-selected-actions: (root.sync-opt-pull ? root.sync-behind-count : 0) + (root.sync-opt-commit-push ? (root.sync-dirty-count + root.sync-ahead-count) : 0) + (root.sync-opt-clone-missing ? root.sync-missing-bp-count : 0);
 
-    callback run-smart-sync(bool, bool, string, bool, bool);
+    callback open-smart-sync();
     callback do-quick-commit-push(string);
     callback do-quick-commit(string);
 
@@ -777,107 +1248,9 @@ export component MainWindow inherits Window {
                         text: root.sync-total-actions > 0 ? ("⚡ Smart-Sync (" + root.sync-total-actions + ") 🔄") : "⚡ Smart-Sync 🔄";
                         primary: true;
                         enabled: !root.busy;
-                        clicked => { root.sync-dialog-open = !root.sync-dialog-open; }
+                        clicked => { root.open-smart-sync(); }
                     }
                     Button { text: "Repo hinzufügen"; clicked => { root.adding = !root.adding; } }
-                }
-
-                if root.sync-dialog-open: Rectangle {
-                    background: (Palette.color-scheme == ColorScheme.dark) ? #1e293b : #2a7fd414;
-                    border-width: 1.5px;
-                    border-color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf888 : #2a7fd455;
-                    border-radius: 8px;
-                    clip: true;
-
-                    VerticalLayout {
-                        padding: 14px;
-                        spacing: 12px;
-
-                        // Titel & Schließen
-                        HorizontalLayout {
-                            spacing: 8px;
-                            Text {
-                                text: "⚡ Smart-Sync: Alles intelligent synchronisieren";
-                                font-size: 15px;
-                                font-weight: 700;
-                                color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8;
-                                vertical-alignment: center;
-                                horizontal-stretch: 1;
-                            }
-                            Button {
-                                text: "×";
-                                clicked => { root.sync-dialog-open = false; }
-                            }
-                        }
-
-                        Text {
-                            text: "Wähle aus, welche Aktionen intelligent ausgeführt werden sollen. Datensicherheit garantiert: Uncommittete oder divergierende Stände werden niemals überschrieben.";
-                            font-size: 12px;
-                            opacity: 0.85;
-                            wrap: word-wrap;
-                        }
-
-                        // Checkboxen
-                        VerticalLayout {
-                            spacing: 8px;
-
-                            // 1. Pullen
-                            CheckBox {
-                                text: "📥 Remote-Updates pullen (" + root.sync-behind-count + " Standort" + (root.sync-behind-count == 1 ? "" : "e") + " mit neuen Commits von GitHub)";
-                                checked <=> root.sync-opt-pull;
-                                enabled: root.sync-behind-count > 0;
-                            }
-
-                            // 2. Commit & Push
-                            CheckBox {
-                                text: "🚀 Lokale Änderungen committen & pushen (" + (root.sync-dirty-count + root.sync-ahead-count) + " Standort" + ((root.sync-dirty-count + root.sync-ahead-count) == 1 ? "" : "e") + " mit ungesendeten Änderungen)";
-                                checked <=> root.sync-opt-commit-push;
-                                enabled: (root.sync-dirty-count + root.sync-ahead-count) > 0;
-                            }
-                            if root.sync-opt-commit-push && (root.sync-dirty-count + root.sync-ahead-count) > 0: HorizontalLayout {
-                                padding-left: 28px;
-                                spacing: 8px;
-                                Text { text: "Commit-Nachricht:"; vertical-alignment: center; font-size: 12px; opacity: 0.85; }
-                                LineEdit {
-                                    text <=> root.sync-commit-msg;
-                                    placeholder-text: "Nachricht für die Commits (z. B. Smart-Sync Update)…";
-                                    horizontal-stretch: 1;
-                                }
-                            }
-
-                            // 3. Basispfade klonen
-                            CheckBox {
-                                text: "📁 In fehlende Basispfade klonen (" + root.sync-missing-bp-count + " fehlende" + (root.sync-missing-bp-count == 1 ? "r" : "") + " Standort" + (root.sync-missing-bp-count == 1 ? "" : "e") + " in RAM-Disk / SSD)";
-                                checked <=> root.sync-opt-clone-missing;
-                                enabled: root.sync-missing-bp-count > 0;
-                            }
-
-                            // 4. Auto-Sync Alternativpfade
-                            CheckBox {
-                                text: "🔄 Lokale Alternativpfade (z. B. SSD ↔ RAM-Disk) nach Push automatisch angleichen";
-                                checked <=> root.sync-opt-auto-sync;
-                            }
-                        }
-
-                        // Fußzeile mit Aktionen
-                        HorizontalLayout {
-                            spacing: 10px;
-                            alignment: end;
-                            Button {
-                                text: "🚀 Jetzt synchronisieren" + (root.sync-selected-actions > 0 ? (" (" + root.sync-selected-actions + " Aktionen)") : "");
-                                primary: true;
-                                enabled: root.sync-selected-actions > 0;
-                                clicked => {
-                                    root.run-smart-sync(root.sync-opt-pull, root.sync-opt-commit-push, root.sync-commit-msg, root.sync-opt-clone-missing, root.sync-opt-auto-sync);
-                                    root.sync-dialog-open = false;
-                                }
-                            }
-                            Button {
-                                text: "Abbrechen";
-                                clicked => { root.sync-dialog-open = false; }
-                            }
-                        }
-                    }
                 }
 
                 if root.adding: HorizontalLayout {

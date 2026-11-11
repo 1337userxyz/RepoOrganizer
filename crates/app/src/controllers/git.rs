@@ -2,9 +2,10 @@ use slint::{ComponentHandle, SharedString};
 
 use crate::ops::{jobs_for, refresh, run_actions, run_smart_sync};
 use crate::state::Shared;
-use crate::MainWindow;
+use crate::ui_sync::{apply, init_smart_sync_options};
+use crate::{MainWindow, SmartSyncWindow};
 
-pub fn register(ui: &MainWindow, state: &Shared) {
+pub fn register(ui: &MainWindow, state: &Shared, smart_sync_win: &SmartSyncWindow) {
     {
         let (weak, state) = (ui.as_weak(), state.clone());
         ui.on_refresh(move || {
@@ -65,8 +66,33 @@ pub fn register(ui: &MainWindow, state: &Shared) {
         });
     }
     {
+        let (weak, ssw, state) = (ui.as_weak(), smart_sync_win.as_weak(), state.clone());
+        ui.on_open_smart_sync(move || {
+            if let (Some(ui), Some(w)) = (weak.upgrade(), ssw.upgrade()) {
+                let mut st = state.lock().unwrap();
+                if !st.smart_sync_running {
+                    init_smart_sync_options(&w, &st);
+                }
+                apply(&ui, &mut st);
+                let sz = w.window().size();
+                if sz.width < 760 || sz.height < 540 {
+                    w.window().set_size(slint::LogicalSize::new(860.0, 660.0));
+                }
+                let _ = w.show();
+            }
+        });
+    }
+    {
+        let ssw = smart_sync_win.as_weak();
+        smart_sync_win.on_close_window(move || {
+            if let Some(w) = ssw.upgrade() {
+                let _ = w.hide();
+            }
+        });
+    }
+    {
         let (weak, state) = (ui.as_weak(), state.clone());
-        ui.on_run_smart_sync(move |do_pull, do_commit_push, msg, do_clone_missing, do_auto_sync| {
+        smart_sync_win.on_run_smart_sync(move |do_pull, do_commit_push, msg, do_clone_missing, do_auto_sync| {
             if let Some(ui) = weak.upgrade() {
                 run_smart_sync(&ui, &state, do_pull, do_commit_push, msg.to_string(), do_clone_missing, do_auto_sync);
             }

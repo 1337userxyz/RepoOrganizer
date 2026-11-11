@@ -6,15 +6,16 @@ pub mod settings;
 pub mod view;
 
 use crate::state::Shared;
-use crate::{MainWindow, ScanWindow, SettingsWindow};
+use crate::{MainWindow, ScanWindow, SettingsWindow, SmartSyncWindow};
 
 pub fn register_all(
     ui: &MainWindow,
     state: &Shared,
     scan_win: &ScanWindow,
     settings_win: &SettingsWindow,
+    smart_sync_win: &SmartSyncWindow,
 ) {
-    git::register(ui, state);
+    git::register(ui, state, smart_sync_win);
     repo::register(ui, state);
     location::register(ui, state);
     view::register(ui, state);

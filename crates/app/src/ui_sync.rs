@@ -9,10 +9,11 @@ use repoorganizer_core::views::BUILTIN;
 use repoorganizer_git::{guard_pull, guard_push};
 use slint::{ModelRc, SharedString, VecModel};
 
+use crate::ops::plan_smart_sync;
 use crate::state::*;
 use crate::{
     present, CheckRow, DirtyFileRow, DirtyLocFilterItem, HeatItem, InfoRow, LocationRow, MainWindow, MappingRow,
-    MissingBasePathRow, RepoRow, ScanRow, SettingsWindow, TaskRow, ViewRow,
+    MissingBasePathRow, RepoRow, ScanRow, SettingsWindow, SmartSyncWindow, TaskRow, ViewRow,
 };
 
 pub fn apply_theme_all(ui: &MainWindow, st: &State) {
@@ -22,7 +23,10 @@ pub fn apply_theme_all(ui: &MainWindow, st: &State) {
         sw.invoke_apply_theme(t.clone());
     }
     if let Some(cfgw) = st.settings_win.as_ref().and_then(|w| w.upgrade()) {
-        cfgw.invoke_apply_theme(t);
+        cfgw.invoke_apply_theme(t.clone());
+    }
+    if let Some(ssw) = st.smart_sync_win.as_ref().and_then(|w| w.upgrade()) {
+        ssw.invoke_apply_theme(t);
     }
 }
 
@@ -195,10 +199,7 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
     }
     ui.set_repos(rows.to_slint_model());
 
-    // Smart-Sync Zähler berechnen
-    let mut sync_behind = 0;
-    let mut sync_dirty = 0;
-    let mut sync_ahead = 0;
+    // Smart-Sync Zähler & Details berechnen
     let mut dirty_repos = 0;
     let mut top_dirty_repo: Option<(String, String, u32)> = None;
 
@@ -209,60 +210,76 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
                     let dirty = s.dirty_files + s.untracked;
                     if dirty > 0 {
                         dirty_repos += 1;
-                        sync_dirty += 1;
                         let desc = format!("{} ({}) – {} uncommittete Datei(en)", r.name, p.display(), dirty);
                         if top_dirty_repo.as_ref().map(|(_, _, d)| dirty > *d).unwrap_or(true) {
                             top_dirty_repo = Some((l.id.clone(), desc, dirty));
                         }
-                    } else if s.ahead > 0 {
-                        sync_ahead += 1;
-                    }
-                    if s.behind > 0 && dirty == 0 {
-                        sync_behind += 1;
                     }
                 }
             }
         }
     }
 
-    let mut sync_missing_bp = 0;
-    let bp = &st.shared.base_paths;
-    for r in &st.shared.repos {
-        let mut check_bp = |base: Option<&String>, on_os: bool| {
-            if let Some(b) = base {
-                let b_trimmed = b.trim();
-                if !b_trimmed.is_empty() && on_os {
-                    let sep = if st.os == Os::Windows { "\\" } else { "/" };
-                    let target_path = format!("{b_trimmed}{sep}{}", r.name);
-                    let exists = st.shared.locations_of(&r.id).any(|l| match resolved(st, l) {
-                        Resolved::Local(p) => p == std::path::Path::new(&target_path),
-                        _ => {
-                            if st.os == Os::Windows {
-                                l.paths.windows.as_deref() == Some(&target_path)
-                            } else {
-                                l.paths.linux.as_deref() == Some(&target_path)
-                            }
-                        }
-                    });
-                    if !exists {
-                        sync_missing_bp += 1;
-                    }
-                }
-            }
-        };
+    let plan = plan_smart_sync(st);
+    let sync_behind = plan.pull_targets.len();
+    let sync_dirty = plan.dirty_count;
+    let sync_ahead = plan.ahead_count;
+    let sync_missing_bp = plan.missing_clones.len();
+    let sync_alt_after_push = plan.alt_after_push_targets.len();
+    let sync_alt_standalone = plan.alt_standalone_targets.len();
+    let total_sync_actions = sync_behind + sync_dirty + sync_ahead + sync_missing_bp + sync_alt_after_push + sync_alt_standalone;
 
-        check_bp(bp.shared_unix.as_ref(), st.os != Os::Windows);
-        check_bp(bp.local_linux.as_ref(), st.os == Os::Linux);
-        check_bp(bp.shared_windows.as_ref(), st.os == Os::Windows);
-        check_bp(bp.local_windows.as_ref(), st.os == Os::Windows);
-    }
-
-    let total_sync_actions = sync_behind + sync_dirty + sync_ahead + sync_missing_bp;
     ui.set_sync_behind_count(sync_behind as i32);
     ui.set_sync_dirty_count(sync_dirty as i32);
     ui.set_sync_ahead_count(sync_ahead as i32);
     ui.set_sync_missing_bp_count(sync_missing_bp as i32);
     ui.set_sync_total_actions(total_sync_actions as i32);
+
+    if let Some(ssw) = st.smart_sync_win.as_ref().and_then(|w| w.upgrade()) {
+        ssw.set_sync_behind_count(sync_behind as i32);
+        ssw.set_sync_dirty_count(sync_dirty as i32);
+        ssw.set_sync_ahead_count(sync_ahead as i32);
+        ssw.set_sync_missing_bp_count(sync_missing_bp as i32);
+        ssw.set_sync_alt_after_push_count(sync_alt_after_push as i32);
+        ssw.set_sync_alt_standalone_count(sync_alt_standalone as i32);
+
+        if sync_behind == 0 {
+            ssw.set_sync_opt_pull(false);
+        }
+        if sync_dirty + sync_ahead == 0 {
+            ssw.set_sync_opt_commit_push(false);
+        }
+        if sync_missing_bp == 0 {
+            ssw.set_sync_opt_clone_missing(false);
+        }
+        let eff_commit_push = ssw.get_sync_opt_commit_push() && (sync_dirty + sync_ahead > 0);
+        let active_alt = sync_alt_standalone + if eff_commit_push { sync_alt_after_push } else { 0 };
+        if active_alt == 0 {
+            ssw.set_sync_opt_auto_sync(false);
+        }
+
+        ssw.set_sync_pull_details(plan.pull_details.to_slint_model());
+        ssw.set_sync_push_details(plan.push_details.to_slint_model());
+        ssw.set_sync_clone_details(plan.clone_details.to_slint_model());
+        ssw.set_sync_alt_after_push_details(plan.alt_after_push_details.to_slint_model());
+        ssw.set_sync_alt_standalone_details(plan.alt_standalone_details.to_slint_model());
+
+        ssw.set_sync_running(st.smart_sync_running);
+        ssw.set_sync_ticker_title(st.smart_sync_ticker_title.as_str().into());
+        ssw.set_sync_ticker_detail(st.smart_sync_ticker_detail.as_str().into());
+        ssw.set_sync_step_current(st.smart_sync_step_current);
+        ssw.set_sync_step_total(st.smart_sync_step_total);
+        ssw.set_sync_ticker_log(ModelRc::new(VecModel::from(
+            st.smart_sync_log
+                .iter()
+                .map(|t| TaskRow {
+                    title: t.title.as_str().into(),
+                    state: t.state,
+                    detail: t.detail.lines().last().unwrap_or("").into(),
+                })
+                .collect::<Vec<_>>(),
+        )));
+    }
 
     ui.set_dirty_repos_count(dirty_repos);
     if let Some((loc_id, desc, _)) = top_dirty_repo {
@@ -777,4 +794,18 @@ pub fn sync_settings_fields(cfgw: &SettingsWindow, st: &State) {
     cfgw.set_cfg_shared_unix(bp.shared_unix.clone().unwrap_or_default().into());
     cfgw.set_cfg_local_linux(bp.local_linux.clone().unwrap_or_default().into());
     cfgw.set_cfg_local_win(bp.local_windows.clone().unwrap_or_default().into());
+}
+
+pub fn init_smart_sync_options(ssw: &SmartSyncWindow, st: &State) {
+    let plan = plan_smart_sync(st);
+    let has_pull = !plan.pull_targets.is_empty();
+    let has_push = (plan.dirty_count + plan.ahead_count) > 0;
+    let has_alt = !plan.alt_standalone_targets.is_empty() || (has_push && !plan.alt_after_push_targets.is_empty());
+
+    ssw.set_sync_opt_pull(has_pull);
+    ssw.set_sync_opt_commit_push(has_push);
+    if plan.missing_clones.is_empty() {
+        ssw.set_sync_opt_clone_missing(false);
+    }
+    ssw.set_sync_opt_auto_sync(has_alt);
 }

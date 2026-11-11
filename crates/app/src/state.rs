@@ -17,7 +17,7 @@ use repoorganizer_core::views::{keyword_matches, view_matches, RepoCtx};
 use repoorganizer_git::CliGit;
 use slint::{ModelRc, VecModel};
 
-use crate::{present, BarItem, ScanWindow, SettingsWindow};
+use crate::{present, BarItem, ScanWindow, SettingsWindow, SmartSyncWindow};
 
 pub struct TaskEntry {
     pub id: u64,
@@ -62,6 +62,13 @@ pub struct State {
     pub task: String,
     pub scan_win: Option<slint::Weak<ScanWindow>>,
     pub settings_win: Option<slint::Weak<SettingsWindow>>,
+    pub smart_sync_win: Option<slint::Weak<SmartSyncWindow>>,
+    pub smart_sync_running: bool,
+    pub smart_sync_ticker_title: String,
+    pub smart_sync_ticker_detail: String,
+    pub smart_sync_step_current: i32,
+    pub smart_sync_step_total: i32,
+    pub smart_sync_log: Vec<TaskEntry>,
 }
 
 pub type Shared = Arc<Mutex<State>>;
