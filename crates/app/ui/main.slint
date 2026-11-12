@@ -274,20 +274,6 @@ component BarChart inherits Rectangle {
     }
 }
 
-component Heatmap inherits Rectangle {
-    in property <[HeatItem]> cells;
-    width: 53 * 7px;
-    height: 7 * 7px;
-    for c in root.cells: Rectangle {
-        x: c.col * 7px;
-        y: c.row * 7px;
-        width: 6px;
-        height: 6px;
-        border-radius: 1px;
-        background: c.level == 0 ? #80808030 : c.level == 1 ? #2e9e5b55 : c.level == 2 ? #2e9e5b88 : c.level == 3 ? #2e9e5bbb : #2e9e5b;
-    }
-}
-
 component AuthorBars inherits Rectangle {
     in property <[BarItem]> items;
     height: max(20px, root.items.length * 22px);

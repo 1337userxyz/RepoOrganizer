@@ -12,6 +12,7 @@ local_linux = "/home/tristan/Projekte"
 id = "configurable-csv-analyzer-rust"
 name = "configurable-csv-analyzer-rust"
 remote_url = "https://github.com/1337userxyz/configurable-csv-analyzer-rust.git"
+clean_keep_binary = true
 
 [[repo]]
 id = "configurablecsvanalyzer"
