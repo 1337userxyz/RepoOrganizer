@@ -263,6 +263,7 @@ pub fn add_repo(st: &mut State, name: &str, path: &str, remote_url: &str) -> Str
         tags: vec![],
         notes: String::new(),
         favorite: false,
+        clean_keep_binary: false,
     });
     st.shared.locations.push(Location {
         id: format!("{id}-1"),
@@ -313,5 +314,34 @@ pub fn open_external(path: &Path, tool: &str) {
 }
 
 pub fn open_url(url: &str) {
-    let _ = kit_launcher::open_url(url);
+    let trim = url.trim();
+    if trim.is_empty() {
+        return;
+    }
+    let target = if let Some(stripped) = trim.strip_prefix("git@github.com:") {
+        format!("https://github.com/{}", stripped.trim_end_matches(".git"))
+    } else if let Some(stripped) = trim.strip_prefix("ssh://git@github.com/") {
+        format!("https://github.com/{}", stripped.trim_end_matches(".git"))
+    } else if let Some(stripped) = trim.strip_prefix("git@gitlab.com:") {
+        format!("https://gitlab.com/{}", stripped.trim_end_matches(".git"))
+    } else if let Some(stripped) = trim.strip_prefix("ssh://git@gitlab.com/") {
+        format!("https://gitlab.com/{}", stripped.trim_end_matches(".git"))
+    } else if let Some(stripped) = trim.strip_prefix("git@bitbucket.org:") {
+        format!("https://bitbucket.org/{}", stripped.trim_end_matches(".git"))
+    } else if let Some(stripped) = trim.strip_prefix("ssh://git@bitbucket.org/") {
+        format!("https://bitbucket.org/{}", stripped.trim_end_matches(".git"))
+    } else {
+        trim.to_string()
+    };
+
+    if target.starts_with("http://") || target.starts_with("https://") {
+        let _ = kit_launcher::open_url(&target);
+    } else {
+        let p = std::path::Path::new(&target);
+        if p.exists() {
+            let _ = kit_launcher::open_path(p);
+        } else {
+            let _ = kit_launcher::open_url(&target);
+        }
+    }
 }

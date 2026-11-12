@@ -163,7 +163,15 @@ pub fn run_actions(ui: &MainWindow, state: &Shared, jobs: Vec<(String, PathBuf, 
                     "publish_gh_priv" => git.publish_github(&path, &msg, true),
                     "publish_gh_pub" => git.publish_github(&path, &msg, false),
                     "clean" => {
-                        let freed = repoorganizer_core::clean::clean_repo_artifacts(&path).map_err(|e| e.to_string())?;
+                        let keep_binary = {
+                            let st = state.lock().unwrap();
+                            st.shared.locations.iter()
+                                .find(|l| l.id == loc_id)
+                                .and_then(|l| st.shared.repos.iter().find(|r| r.id == l.repo_id))
+                                .map(|r| r.clean_keep_binary)
+                                .unwrap_or(false)
+                        };
+                        let freed = repoorganizer_core::clean::clean_repo_artifacts_opt(&path, keep_binary).map_err(|e| e.to_string())?;
                         Ok(format!("{} freigegeben", repoorganizer_core::clean::format_bytes(freed)))
                     },
                     other => Ok(format!("unbekannte Aktion {other}")),

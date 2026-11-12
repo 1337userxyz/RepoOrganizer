@@ -215,6 +215,43 @@ pub fn format_mtime(ts: Option<i64>, now: i64) -> String {
     }
 }
 
+/// Formatiert den letzten Änderungszeitpunkt (entweder mtime bei uncommitteten Änderungen oder Commit-Zeit).
+pub fn format_last_change(dirty_mtime: Option<i64>, commit_ts: Option<i64>, now: i64) -> (String, bool) {
+    if let Some(dm) = dirty_mtime {
+        if commit_ts.is_none() || dm >= commit_ts.unwrap() {
+            let rel = ago(Some(dm), now);
+            let day_secs = dm.rem_euclid(86400);
+            let hour = day_secs / 3600;
+            let min = (day_secs % 3600) / 60;
+            let now_days = now.div_euclid(86400);
+            let ts_days = dm.div_euclid(86400);
+            let text = if now_days == ts_days {
+                format!("✎ {hour:02}:{min:02} ({rel})")
+            } else {
+                let (_y, m, d) = civil_from_days(ts_days);
+                format!("✎ {d:02}.{m:02}. ({rel})")
+            };
+            return (text, true);
+        }
+    }
+    if let Some(c) = commit_ts {
+        let rel = ago(Some(c), now);
+        let day_secs = c.rem_euclid(86400);
+        let hour = day_secs / 3600;
+        let min = (day_secs % 3600) / 60;
+        let now_days = now.div_euclid(86400);
+        let ts_days = c.div_euclid(86400);
+        let text = if now_days == ts_days {
+            format!("✓ {hour:02}:{min:02} ({rel})")
+        } else {
+            let (_y, m, d) = civil_from_days(ts_days);
+            format!("✓ {d:02}.{m:02}. ({rel})")
+        };
+        return (text, false);
+    }
+    ("–".into(), false)
+}
+
 pub fn format_file_size(bytes: Option<u64>) -> String {
     let Some(b) = bytes else { return "–".into() };
     if b < 1024 {
@@ -299,6 +336,28 @@ pub fn build_size_kind(bytes: u64) -> i32 {
         1 // orange (moderate Build-Artefakte)
     } else {
         0 // neutral / sauber
+    }
+}
+
+/// Erzeugt einen lesbaren Button-Text für das Remote-Repository.
+pub fn format_remote_btn_text(remote: &str) -> String {
+    let trim = remote.trim();
+    if trim.is_empty() {
+        return String::new();
+    }
+    let lower = trim.to_lowercase();
+    if lower.contains("github.com") {
+        "🌐 GitHub".into()
+    } else if lower.contains("gitlab.com") {
+        "🌐 GitLab".into()
+    } else if lower.contains("bitbucket.org") {
+        "🌐 Bitbucket".into()
+    } else if lower.starts_with("http://") || lower.starts_with("https://") {
+        "🌐 Web".into()
+    } else if lower.starts_with("git@") || lower.starts_with("ssh://") {
+        "🌐 SSH".into()
+    } else {
+        "📁 Pfad".into()
     }
 }
 
@@ -387,6 +446,16 @@ mod tests {
         assert_eq!(working_tree_text_locs(8, 0, 2), "✎ 8 (2 Orte)");
         assert_eq!(working_tree_text_locs(8, 3, 2), "✎ 8 (2 Orte) · 📦3");
         assert_eq!(working_tree_text_locs(8, 1, 1), "✎ 8 · 📦1");
+    }
+
+    #[test]
+    fn format_remote_btn_text_works() {
+        assert_eq!(format_remote_btn_text(""), "");
+        assert_eq!(format_remote_btn_text("https://github.com/org/repo.git"), "🌐 GitHub");
+        assert_eq!(format_remote_btn_text("git@github.com:org/repo.git"), "🌐 GitHub");
+        assert_eq!(format_remote_btn_text("https://gitlab.com/org/repo"), "🌐 GitLab");
+        assert_eq!(format_remote_btn_text("https://git.example.com/repo"), "🌐 Web");
+        assert_eq!(format_remote_btn_text("/home/user/repo"), "📁 Pfad");
     }
 }
 

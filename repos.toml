@@ -47,6 +47,7 @@ remote_url = "https://github.com/1337userxyz/pwsh7-scripts.git"
 id = "repoorganizer"
 name = "RepoOrganizer"
 remote_url = "https://github.com/1337userxyz/RepoOrganizer.git"
+clean_keep_binary = true
 
 [[repo]]
 id = "slint-desktop-kit"

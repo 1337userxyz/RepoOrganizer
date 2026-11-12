@@ -49,7 +49,7 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
     let col_remote = ui.get_col_remote_filter();
 
     // Gefilterte Repos sammeln (inkl. Spalten-ComboBox-Filter) und nach Commit-Datum sortieren
-    let mut filtered: Vec<(Repo, Option<i64>)> = st
+    let mut filtered: Vec<(Repo, Option<i64>, Option<i64>)> = st
         .shared
         .repos
         .iter()
@@ -57,6 +57,7 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
         .filter_map(|r| {
             let snaps: Vec<&Snapshot> = st.shared.locations_of(&r.id).filter_map(|l| st.snaps.get(&l.id)).collect();
             let last_c = snaps.iter().filter_map(|s| s.last_commit).max();
+            let dirty_mtime = snaps.iter().flat_map(|s| s.dirty_details.iter()).filter_map(|d| d.mtime).max();
             let status = repo_status(st, &r.id);
             let branch = snaps.iter().find_map(|s| s.branch.clone()).unwrap_or_default();
             let ahead = snaps.iter().map(|s| s.ahead).max().unwrap_or(0);
@@ -116,27 +117,27 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
             if repo_clone.remote_url.is_empty() && !eff_remote.is_empty() {
                 repo_clone.remote_url = eff_remote;
             }
-            Some((repo_clone, last_c))
+            Some((repo_clone, last_c, dirty_mtime))
         })
         .collect();
 
     if col_commit == 1 {
         // Älteste zuerst
-        filtered.sort_by(|(a, ca), (b, cb)| ca.unwrap_or(i64::MAX).cmp(&cb.unwrap_or(i64::MAX)).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+        filtered.sort_by(|(a, ca, _), (b, cb, _)| ca.unwrap_or(i64::MAX).cmp(&cb.unwrap_or(i64::MAX)).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
     } else {
         // Standard: Neueste zuerst
-        filtered.sort_by(|(a, ca), (b, cb)| cb.unwrap_or(0).cmp(&ca.unwrap_or(0)).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+        filtered.sort_by(|(a, ca, _), (b, cb, _)| cb.unwrap_or(0).cmp(&ca.unwrap_or(0)).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
     }
 
     // Automatisch oberstes Repo auswählen (beim Programmstart oder wenn Auswahl durch Filter entfällt)
-    if !filtered.is_empty() && (st.selected.is_empty() || !filtered.iter().any(|(r, _)| r.id == st.selected)) {
+    if !filtered.is_empty() && (st.selected.is_empty() || !filtered.iter().any(|(r, _, _)| r.id == st.selected)) {
         st.selected = filtered[0].0.id.clone();
     } else if filtered.is_empty() && !st.shared.repos.iter().any(|r| r.id == st.selected) {
         st.selected.clear();
     }
 
     let mut rows = Vec::with_capacity(filtered.len());
-    for (r, last_c) in &filtered {
+    for (r, last_c, dirty_mtime) in &filtered {
         let status = repo_status(st, &r.id);
         let snaps: Vec<&Snapshot> = st.shared.locations_of(&r.id).filter_map(|l| st.snaps.get(&l.id)).collect();
         let best_snap = snaps.iter().max_by_key(|s| s.last_commit.unwrap_or(0));
@@ -225,10 +226,13 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
             .collect::<Vec<_>>()
             .join("\n");
 
+        let (last_change_text, last_change_is_dirty) = present::format_last_change(*dirty_mtime, *last_c, now_t);
+
         rows.push(RepoRow {
             id: r.id.as_str().into(),
             name: r.name.as_str().into(),
             remote: r.remote_url.as_str().into(),
+            remote_btn_text: present::format_remote_btn_text(&r.remote_url).into(),
             tags: r.tags.join(", ").into(),
             status: status_display.into(),
             error_msg: present::status_error_short(&status).into(),
@@ -239,6 +243,8 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
             last_commit_hash: commit_hash.into(),
             last_commit_author: commit_author.into(),
             last_commit_msg: commit_msg.into(),
+            last_change: last_change_text.into(),
+            last_change_is_dirty,
             commits: if commits > 0 { commits.to_string().into() } else { "–".into() },
             files: if files > 0 { files.to_string().into() } else { "–".into() },
             size: present::format_size_kb(size_kb).into(),
@@ -491,6 +497,7 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
         ui.set_selected_tags(r.tags.join(", ").into());
         ui.set_selected_notes(r.notes.as_str().into());
         ui.set_selected_favorite(r.favorite);
+        ui.set_selected_clean_keep_binary(r.clean_keep_binary);
 
         let is_offline = st.shared.locations_of(&r.id).all(|l| {
             match resolved(st, l) {
@@ -813,6 +820,7 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
         ui.set_selected_tags("".into());
         ui.set_selected_notes("".into());
         ui.set_selected_favorite(false);
+        ui.set_selected_clean_keep_binary(false);
         ui.set_selected_is_offline(false);
         ui.set_selected_suggested_dest("".into());
         ui.set_selected_dirty_files(ModelRc::default());

@@ -14,6 +14,8 @@ pub struct Repo {
     pub notes: String,
     #[serde(default, skip_serializing_if = "is_false")]
     pub favorite: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub clean_keep_binary: bool,
 }
 
 fn is_false(b: &bool) -> bool {

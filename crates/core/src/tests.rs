@@ -45,8 +45,8 @@ fn resolve_auto_map_existing_directory() {
 fn sample() -> SharedConfig {
     let mut c = SharedConfig::default();
     c.repos = vec![
-        Repo { id: "b".into(), name: "B".into(), remote_url: "git@h:b.git".into(), tags: vec!["z".into(), "a".into()], notes: String::new(), favorite: true },
-        Repo { id: "a".into(), name: "A".into(), remote_url: String::new(), tags: vec![], notes: "n".into(), favorite: false },
+        Repo { id: "b".into(), name: "B".into(), remote_url: "git@h:b.git".into(), tags: vec!["z".into(), "a".into()], notes: String::new(), favorite: true, clean_keep_binary: false },
+        Repo { id: "a".into(), name: "A".into(), remote_url: String::new(), tags: vec![], notes: "n".into(), favorite: false, clean_keep_binary: false },
     ];
     c.locations = vec![loc(Some(r"R:\git\a"), Some("/mnt/r/git/a"))];
     c.locations[0].repo_id = "a".into();
@@ -168,7 +168,7 @@ mod m6 {
 
     #[test]
     fn views_match() {
-        let r = Repo { id: "r".into(), name: "r".into(), remote_url: String::new(), tags: vec!["Work".into(), "rust".into()], notes: String::new(), favorite: true };
+        let r = Repo { id: "r".into(), name: "r".into(), remote_url: String::new(), tags: vec!["Work".into(), "rust".into()], notes: String::new(), favorite: true, clean_keep_binary: false };
         let c = ctx(&r, vec![Status::Behind(2), Status::UpToDate]);
         assert!(keyword_matches("behind", &c, 30));
         assert!(!keyword_matches("dirty", &c, 30));

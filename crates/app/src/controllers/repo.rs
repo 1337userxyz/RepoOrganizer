@@ -151,7 +151,7 @@ pub fn register(ui: &MainWindow, state: &Shared) {
     }
     {
         let (weak, state) = (ui.as_weak(), state.clone());
-        ui.on_save_repo_meta(move |repo: SharedString, remote: SharedString, tags: SharedString, notes: SharedString| {
+        ui.on_save_repo_meta(move |repo: SharedString, remote: SharedString, tags: SharedString, notes: SharedString, clean_keep_binary: bool| {
             if let Some(ui) = weak.upgrade() {
                 let rem = remote.trim().to_string();
                 let jobs = {
@@ -160,6 +160,7 @@ pub fn register(ui: &MainWindow, state: &Shared) {
                         r.remote_url = rem.clone();
                         r.tags = tags.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
                         r.notes = notes.trim().to_string();
+                        r.clean_keep_binary = clean_keep_binary;
                     }
                     save_shared(&mut st);
                     st.task = "Repo-Metadaten gespeichert".into();
@@ -169,6 +170,19 @@ pub fn register(ui: &MainWindow, state: &Shared) {
                 if !jobs.is_empty() {
                     run_actions(&ui, &state, jobs, "set_remote", rem);
                 }
+            }
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_toggle_repo_clean_keep_binary(move |repo: SharedString, enabled: bool| {
+            if let Some(ui) = weak.upgrade() {
+                let mut st = state.lock().unwrap();
+                if let Some(r) = st.shared.repos.iter_mut().find(|r| r.id == repo.as_str()) {
+                    r.clean_keep_binary = enabled;
+                }
+                save_shared(&mut st);
+                apply(&ui, &mut st);
             }
         });
     }
