@@ -2463,6 +2463,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "kit-theme"
+version = "0.1.0"
+
+[[package]]
 name = "ksni"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3755,6 +3759,7 @@ dependencies = [
  "kit-logging",
  "kit-picker",
  "kit-slint",
+ "kit-theme",
  "log",
  "repoorganizer-core",
  "repoorganizer-git",

@@ -8,7 +8,7 @@ use slint::{ComponentHandle, SharedString};
 use crate::ops::{refresh, start_scan};
 use crate::state::{save_shared, Shared};
 use crate::ui_sync::apply;
-use crate::{MainWindow, ScanWindow};
+use crate::{AppTheme, MainWindow, ScanWindow};
 
 pub fn register(ui: &MainWindow, state: &Shared, scan_win: &ScanWindow) {
     // Open Scan dialog from MainWindow
@@ -17,7 +17,7 @@ pub fn register(ui: &MainWindow, state: &Shared, scan_win: &ScanWindow) {
         ui.on_open_scan(move || {
             if let Some(w) = sw.upgrade() {
                 let theme = state.lock().unwrap().local.theme.clone();
-                w.invoke_apply_theme(theme.as_str().into());
+                w.global::<AppTheme>().invoke_apply(theme.as_str().into());
                 let sz = w.window().size();
                 if sz.width < 860 || sz.height < 580 {
                     w.window().set_size(slint::LogicalSize::new(920.0, 640.0));

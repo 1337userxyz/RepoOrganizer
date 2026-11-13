@@ -4,7 +4,7 @@ use slint::{ComponentHandle, SharedString};
 
 use crate::state::{save_local, save_shared, Shared};
 use crate::ui_sync::{apply, apply_theme_all, sync_settings_fields};
-use crate::{MainWindow, SettingsWindow};
+use crate::{AppTheme, MainWindow, SettingsWindow};
 
 pub fn register(ui: &MainWindow, state: &Shared, settings_win: &SettingsWindow) {
     // Open Settings dialog from MainWindow
@@ -14,7 +14,7 @@ pub fn register(ui: &MainWindow, state: &Shared, settings_win: &SettingsWindow) 
             if let Some(w) = cfgw.upgrade() {
                 let st = state.lock().unwrap();
                 sync_settings_fields(&w, &st);
-                w.invoke_apply_theme(st.local.theme.as_str().into());
+                w.global::<AppTheme>().invoke_apply(st.local.theme.as_str().into());
                 let sz = w.window().size();
                 if sz.width < 920 || sz.height < 640 {
                     w.window().set_size(slint::LogicalSize::new(980.0, 700.0));

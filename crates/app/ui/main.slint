@@ -1,4 +1,6 @@
-import { Button, CheckBox, ComboBox, LineEdit, ListView, Palette, ScrollView } from "std-widgets.slint";
+import { Button, CheckBox, ComboBox, LineEdit, ListView, ScrollView } from "std-widgets.slint";
+import { AppTheme, KitThemeSelector } from "@kit-theme";
+export { AppTheme }
 
 export struct MappingRow {
     windows: string,
@@ -157,7 +159,7 @@ export struct RepoRow {
 
 global Kinds {
     pure public function kind-color(kind: int) -> color {
-        return kind == 0 ? #2e9e5b : kind == 1 ? #2a7fd4 : kind == 2 ? #d98e04 : kind == 3 ? #e04347 : #808080;
+        return kind == 0 ? AppTheme.success : kind == 1 ? AppTheme.accent : kind == 2 ? AppTheme.warning : kind == 3 ? AppTheme.danger : AppTheme.text-muted;
     }
 }
 
@@ -186,7 +188,7 @@ component ColSep inherits Rectangle {
         x: (parent.width - 1px) / 2;
         width: 1px;
         height: parent.height;
-        background: #80808022;
+        background: AppTheme.border;
     }
 }
 
@@ -201,7 +203,7 @@ component ColResizer inherits Rectangle {
         x: (parent.width - 1px) / 2;
         width: 1px;
         height: parent.height;
-        background: mta.has-hover || mta.pressed ? #2a7fd4 : #80808035;
+        background: mta.has-hover || mta.pressed ? AppTheme.accent : AppTheme.border-strong;
     }
 
     mta := TouchArea {
@@ -230,12 +232,12 @@ component HoverCard inherits Rectangle {
     width: root.card-width;
     height: root.card-height;
     z: 1000;
-    background: (Palette.color-scheme == ColorScheme.dark) ? #1e293b : #ffffff;
+    background: AppTheme.bg-surface;
     border-width: 1.5px;
-    border-color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #2a7fd4;
-    border-radius: 6px;
+    border-color: AppTheme.accent;
+    border-radius: AppTheme.radius-md;
     drop-shadow-blur: 8px;
-    drop-shadow-color: #00000060;
+    drop-shadow-color: AppTheme.bg-scrim;
     drop-shadow-offset-y: 2px;
     clip: true;
 
@@ -248,7 +250,7 @@ component HoverCard inherits Rectangle {
 
 component BarChart inherits Rectangle {
     in property <[BarItem]> items;
-    in property <color> bar-color: #2a7fd4;
+    in property <color> bar-color: AppTheme.accent;
     height: 110px;
     HorizontalLayout {
         spacing: 3px;
@@ -281,12 +283,12 @@ component AuthorBars inherits Rectangle {
         spacing: 2px;
         for a in root.items: Rectangle {
             height: 20px;
-            background: #80808014;
+            background: AppTheme.bg-subtle;
             border-radius: 3px;
             Rectangle {
                 x: 0;
                 width: parent.width * a.frac;
-                background: #2a7fd455;
+                background: AppTheme.accent.with-alpha(0.35);
                 border-radius: 3px;
             }
             Text { x: 6px; text: a.label; font-size: 11px; vertical-alignment: center; overflow: elide; width: parent.width - 50px; }
@@ -306,10 +308,6 @@ export component ScanWindow inherits Window {
     in property <bool> scanning;
     in property <string> scan-progress;
     in-out property <string> scan-roots: "";
-
-    public function apply-theme(t: string) {
-        Palette.color-scheme = t == "dark" ? ColorScheme.dark : t == "light" ? ColorScheme.light : ColorScheme.unknown;
-    }
 
     callback scan-start(string, string);
     callback scan-cancel();
@@ -360,13 +358,13 @@ export component ScanWindow inherits Window {
             min-height: 280px;
             vertical-stretch: 1;
             border-width: 1px;
-            border-color: #80808030;
-            border-radius: 6px;
-            background: #80808008;
+            border-color: AppTheme.border;
+            border-radius: AppTheme.radius-md;
+            background: AppTheme.bg-surface;
             ListView {
                 for row[i] in root.scan-rows: Rectangle {
                     height: 46px;
-                    background: ta2.has-hover ? #80808018 : (Math.mod(i, 2) == 1 ? #8080800a : transparent);
+                    background: ta2.has-hover ? AppTheme.bg-hover : (Math.mod(i, 2) == 1 ? AppTheme.bg-subtle : transparent);
                     ta2 := TouchArea { enabled: !row.known; clicked => { root.scan-toggle(i); } }
                     HorizontalLayout {
                         padding-left: 10px;
@@ -417,10 +415,6 @@ export component SettingsWindow inherits Window {
     in property <[MappingRow]> cfg-mappings;
     in property <[CheckRow]> cfg-checks;
 
-    public function apply-theme(t: string) {
-        Palette.color-scheme = t == "dark" ? ColorScheme.dark : t == "light" ? ColorScheme.light : ColorScheme.unknown;
-    }
-
     callback theme-changed(string);
     callback save-settings(string, string, string, string, string, string, string, string, string, string);
     callback browse-base-path(string);
@@ -459,31 +453,10 @@ export component SettingsWindow inherits Window {
                         HorizontalLayout {
                             spacing: 8px;
                             Text { text: "Darstellung (Theme):"; width: 190px; vertical-alignment: center; }
-                            Button {
-                                text: "System";
-                                primary: root.cfg-theme == "system";
-                                clicked => {
-                                    root.cfg-theme = "system";
-                                    root.apply-theme("system");
-                                    root.theme-changed("system");
-                                }
-                            }
-                            Button {
-                                text: "Hell";
-                                primary: root.cfg-theme == "light";
-                                clicked => {
-                                    root.cfg-theme = "light";
-                                    root.apply-theme("light");
-                                    root.theme-changed("light");
-                                }
-                            }
-                            Button {
-                                text: "Dunkel";
-                                primary: root.cfg-theme == "dark";
-                                clicked => {
-                                    root.cfg-theme = "dark";
-                                    root.apply-theme("dark");
-                                    root.theme-changed("dark");
+                            KitThemeSelector {
+                                mode <=> root.cfg-theme;
+                                changed(m) => {
+                                    root.theme-changed(m);
                                 }
                             }
                         }
@@ -579,9 +552,9 @@ component SmartSyncDetailItem inherits Rectangle {
     in property <SmartSyncDetailRow> item;
     property <bool> files-open: false;
 
-    background: #80808014;
+    background: AppTheme.bg-subtle;
     border-width: 1px;
-    border-color: #80808024;
+    border-color: AppTheme.border;
     border-radius: 5px;
     clip: true;
 
@@ -622,15 +595,15 @@ component SmartSyncDetailItem inherits Rectangle {
             if root.item.files.length > 0: Rectangle {
                 height: 20px;
                 min-width: files-toggle-txt.preferred-width + 14px;
-                background: files-ta.has-hover ? #2a7fd433 : #80808022;
+                background: files-ta.has-hover ? AppTheme.accent.with-alpha(0.2) : AppTheme.bg-subtle;
                 border-width: 1px;
-                border-color: root.files-open ? #2a7fd488 : #80808044;
-                border-radius: 4px;
+                border-color: root.files-open ? AppTheme.accent.with-alpha(0.5) : AppTheme.border-strong;
+                border-radius: AppTheme.radius-sm;
                 files-toggle-txt := Text {
                     text: (root.files-open ? "▼ " : "▶ ") + root.item.files.length + (root.item.files.length == 1 ? " Datei" : " Dateien");
-                    font-size: 11px;
+                    font-size: AppTheme.font-size-sm;
                     font-weight: 600;
-                    color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8;
+                    color: AppTheme.accent;
                     horizontal-alignment: center;
                     vertical-alignment: center;
                 }
@@ -650,8 +623,8 @@ component SmartSyncDetailItem inherits Rectangle {
         }
 
         if root.files-open && root.item.files.length > 0: Rectangle {
-            background: #80808010;
-            border-radius: 4px;
+            background: AppTheme.bg-subtle;
+            border-radius: AppTheme.radius-sm;
             clip: true;
             VerticalLayout {
                 padding-left: 8px;
@@ -727,10 +700,6 @@ export component SmartSyncWindow inherits Window {
         + (root.clone-active ? root.sync-missing-bp-count : 0)
         + (root.alt-active ? root.active-alt-count : 0);
 
-    public function apply-theme(t: string) {
-        Palette.color-scheme = t == "dark" ? ColorScheme.dark : t == "light" ? ColorScheme.light : ColorScheme.unknown;
-    }
-
     callback run-smart-sync(bool, bool, string, bool, bool);
     callback close-window();
 
@@ -743,9 +712,9 @@ export component SmartSyncWindow inherits Window {
             spacing: 8px;
             Text {
                 text: "⚡ Smart-Sync: Alles intelligent synchronisieren";
-                font-size: 18px;
+                font-size: AppTheme.font-size-xl;
                 font-weight: 700;
-                color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8;
+                color: AppTheme.accent;
                 vertical-alignment: center;
                 horizontal-stretch: 1;
             }
@@ -774,10 +743,10 @@ export component SmartSyncWindow inherits Window {
 
                 // 1. Aktiv: Remote-Updates pullen
                 if root.pull-active: Rectangle {
-                    background: #2a7fd412;
+                    background: AppTheme.accent-bg;
                     border-width: 1px;
-                    border-color: #2a7fd455;
-                    border-radius: 6px;
+                    border-color: AppTheme.accent.with-alpha(0.35);
+                    border-radius: AppTheme.radius-md;
                     clip: true;
                     VerticalLayout {
                         padding: 10px;
@@ -799,10 +768,10 @@ export component SmartSyncWindow inherits Window {
 
                 // 2. Aktiv: Lokale Änderungen committen & pushen
                 if root.push-active: Rectangle {
-                    background: #d98e0412;
+                    background: AppTheme.warning.with-alpha(0.08);
                     border-width: 1px;
-                    border-color: #d98e0455;
-                    border-radius: 6px;
+                    border-color: AppTheme.warning.with-alpha(0.35);
+                    border-radius: AppTheme.radius-md;
                     clip: true;
                     VerticalLayout {
                         padding: 10px;
@@ -845,10 +814,10 @@ export component SmartSyncWindow inherits Window {
 
                 // 3. Aktiv: In fehlende Basispfade klonen
                 if root.clone-active: Rectangle {
-                    background: #2a7fd412;
+                    background: AppTheme.accent-bg;
                     border-width: 1px;
-                    border-color: #2a7fd455;
-                    border-radius: 6px;
+                    border-color: AppTheme.accent.with-alpha(0.35);
+                    border-radius: AppTheme.radius-md;
                     clip: true;
                     VerticalLayout {
                         padding: 10px;
@@ -870,10 +839,10 @@ export component SmartSyncWindow inherits Window {
 
                 // 4. Aktiv: Lokale Alternativpfade automatisch angleichen
                 if root.alt-active: Rectangle {
-                    background: #2e9e5b12;
+                    background: AppTheme.success.with-alpha(0.08);
                     border-width: 1px;
-                    border-color: #2e9e5b55;
-                    border-radius: 6px;
+                    border-color: AppTheme.success.with-alpha(0.35);
+                    border-radius: AppTheme.radius-md;
                     clip: true;
                     VerticalLayout {
                         padding: 10px;
@@ -914,10 +883,10 @@ export component SmartSyncWindow inherits Window {
                     // Zuerst: Verfügbare, aber aktuell abgewählte Optionen (count > 0)
                     if !root.pull-active && root.sync-behind-count > 0: Rectangle {
                         height: 34px;
-                        background: #8080800c;
+                        background: AppTheme.bg-subtle;
                         border-width: 1px;
-                        border-color: #80808028;
-                        border-radius: 6px;
+                        border-color: AppTheme.border;
+                        border-radius: AppTheme.radius-md;
                         HorizontalLayout {
                             padding-left: 10px;
                             padding-right: 10px;
@@ -930,10 +899,10 @@ export component SmartSyncWindow inherits Window {
                     }
                     if !root.push-active && root.push-total-count > 0: Rectangle {
                         height: 34px;
-                        background: #8080800c;
+                        background: AppTheme.bg-subtle;
                         border-width: 1px;
-                        border-color: #80808028;
-                        border-radius: 6px;
+                        border-color: AppTheme.border;
+                        border-radius: AppTheme.radius-md;
                         HorizontalLayout {
                             padding-left: 10px;
                             padding-right: 10px;
@@ -953,10 +922,10 @@ export component SmartSyncWindow inherits Window {
                     }
                     if !root.clone-active && root.sync-missing-bp-count > 0: Rectangle {
                         height: 34px;
-                        background: #8080800c;
+                        background: AppTheme.bg-subtle;
                         border-width: 1px;
-                        border-color: #80808028;
-                        border-radius: 6px;
+                        border-color: AppTheme.border;
+                        border-radius: AppTheme.radius-md;
                         HorizontalLayout {
                             padding-left: 10px;
                             padding-right: 10px;
@@ -969,10 +938,10 @@ export component SmartSyncWindow inherits Window {
                     }
                     if !root.alt-active && root.active-alt-count > 0: Rectangle {
                         height: 34px;
-                        background: #8080800c;
+                        background: AppTheme.bg-subtle;
                         border-width: 1px;
-                        border-color: #80808028;
-                        border-radius: 6px;
+                        border-color: AppTheme.border;
+                        border-radius: AppTheme.radius-md;
                         HorizontalLayout {
                             padding-left: 10px;
                             padding-right: 10px;
@@ -987,10 +956,10 @@ export component SmartSyncWindow inherits Window {
                     // Ganz unten: Ausgegraute Optionen ohne anstehende Aufgaben (count == 0)
                     if root.sync-behind-count == 0: Rectangle {
                         height: 32px;
-                        background: #80808006;
+                        background: AppTheme.bg-subtle;
                         border-width: 1px;
-                        border-color: #80808018;
-                        border-radius: 6px;
+                        border-color: AppTheme.border;
+                        border-radius: AppTheme.radius-md;
                         HorizontalLayout {
                             padding-left: 10px;
                             padding-right: 10px;
@@ -1003,10 +972,10 @@ export component SmartSyncWindow inherits Window {
                     }
                     if root.push-total-count == 0: Rectangle {
                         height: 32px;
-                        background: #80808006;
+                        background: AppTheme.bg-subtle;
                         border-width: 1px;
-                        border-color: #80808018;
-                        border-radius: 6px;
+                        border-color: AppTheme.border;
+                        border-radius: AppTheme.radius-md;
                         HorizontalLayout {
                             padding-left: 10px;
                             padding-right: 10px;
@@ -1019,10 +988,10 @@ export component SmartSyncWindow inherits Window {
                     }
                     if root.sync-missing-bp-count == 0: Rectangle {
                         height: 32px;
-                        background: #80808006;
+                        background: AppTheme.bg-subtle;
                         border-width: 1px;
-                        border-color: #80808018;
-                        border-radius: 6px;
+                        border-color: AppTheme.border;
+                        border-radius: AppTheme.radius-md;
                         HorizontalLayout {
                             padding-left: 10px;
                             padding-right: 10px;
@@ -1035,10 +1004,10 @@ export component SmartSyncWindow inherits Window {
                     }
                     if root.active-alt-count == 0: Rectangle {
                         height: 32px;
-                        background: #80808006;
+                        background: AppTheme.bg-subtle;
                         border-width: 1px;
-                        border-color: #80808018;
-                        border-radius: 6px;
+                        border-color: AppTheme.border;
+                        border-radius: AppTheme.radius-md;
                         HorizontalLayout {
                             padding-left: 10px;
                             padding-right: 10px;
@@ -1055,10 +1024,10 @@ export component SmartSyncWindow inherits Window {
 
         // Kompakter, informativer Status-Ticker während und nach der Ausführung
         if root.sync-running || root.sync-ticker-title != "" || root.sync-ticker-log.length > 0: Rectangle {
-            background: (Palette.color-scheme == ColorScheme.dark) ? #0f172a : #1e293b0d;
+            background: AppTheme.bg-subtle;
             border-width: 1px;
-            border-color: root.sync-running ? #38bdf8aa : #2e9e5b77;
-            border-radius: 6px;
+            border-color: root.sync-running ? AppTheme.accent.with-alpha(0.65) : AppTheme.success.with-alpha(0.45);
+            border-radius: AppTheme.radius-md;
             clip: true;
 
             VerticalLayout {
@@ -1077,9 +1046,7 @@ export component SmartSyncWindow inherits Window {
                         text: root.sync-ticker-title != "" ? root.sync-ticker-title : "Status-Ticker";
                         font-size: 12px;
                         font-weight: 700;
-                        color: root.sync-running
-                            ? ((Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8)
-                            : #2e9e5b;
+                        color: root.sync-running ? AppTheme.accent : AppTheme.success;
                         vertical-alignment: center;
                     }
 
@@ -1107,7 +1074,7 @@ export component SmartSyncWindow inherits Window {
                             width: 72px;
                             height: 6px;
                             y: (parent.height - self.height) / 2;
-                            background: #80808030;
+                            background: AppTheme.border;
                             border-radius: 3px;
                             clip: true;
                             Rectangle {
@@ -1115,7 +1082,7 @@ export component SmartSyncWindow inherits Window {
                                 y: 0;
                                 height: parent.height;
                                 width: parent.width * Math.min(1.0, Math.max(0.0, root.sync-step-current / root.sync-step-total));
-                                background: root.sync-running ? #2a7fd4 : #2e9e5b;
+                                background: root.sync-running ? AppTheme.accent : AppTheme.success;
                                 border-radius: 3px;
                             }
                         }
@@ -1128,8 +1095,8 @@ export component SmartSyncWindow inherits Window {
                     if root.sync-ticker-log.length > 0: Rectangle {
                         height: 20px;
                         min-width: log-btn-txt.preferred-width + 12px;
-                        background: log-ta.has-hover ? #80808030 : #80808018;
-                        border-radius: 4px;
+                        background: log-ta.has-hover ? AppTheme.bg-hover : AppTheme.bg-subtle;
+                        border-radius: AppTheme.radius-sm;
                         log-btn-txt := Text {
                             text: (root.ticker-log-open ? "▼ Details (" : "▶ Details (") + root.sync-ticker-log.length + ")";
                             font-size: 10px;
@@ -1147,8 +1114,8 @@ export component SmartSyncWindow inherits Window {
                 // Kompakte mehrspaltige Detailtabelle (nutzt die volle Breite informativ aus)
                 if root.ticker-log-open && root.sync-ticker-log.length > 0: Rectangle {
                     height: min(66px, max(20px, root.sync-ticker-log.length * 20px));
-                    background: #8080800c;
-                    border-radius: 4px;
+                    background: AppTheme.bg-subtle;
+                    border-radius: AppTheme.radius-sm;
                     clip: true;
                     ListView {
                         for entry in root.sync-ticker-log: HorizontalLayout {
@@ -1346,10 +1313,6 @@ export component MainWindow inherits Window {
     in-out property <bool> selected-clean-keep-binary: false;
     callback toggle-repo-clean-keep-binary(string, bool);
 
-    public function apply-theme(t: string) {
-        Palette.color-scheme = t == "dark" ? ColorScheme.dark : t == "light" ? ColorScheme.light : ColorScheme.unknown;
-    }
-
     callback refresh();
     callback select(string);
     callback filter-changed(string);
@@ -1401,7 +1364,7 @@ export component MainWindow inherits Window {
         // Obere Haupt-App-Leiste: Titel, Ansichten-Auswahl und Werkzeuge
         Rectangle {
             height: 44px;
-            background: #80808012;
+            background: AppTheme.bg-subtle;
             clip: true;
             top-bar-scroll := Flickable {
                 width: 100%;
@@ -1423,11 +1386,11 @@ export component MainWindow inherits Window {
                         text: "📂 RepoOrganizer";
                         font-size: 16px;
                         font-weight: 800;
-                        color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8;
+                        color: AppTheme.accent;
                         vertical-alignment: center;
                     }
 
-                    Rectangle { width: 1px; height: 20px; background: #80808033; y: (parent.height - self.height) / 2; }
+                    Rectangle { width: 1px; height: 20px; background: AppTheme.border; y: (parent.height - self.height) / 2; }
 
                     Text {
                         text: "Ansicht:";
@@ -1481,7 +1444,7 @@ export component MainWindow inherits Window {
             }
         }
 
-        Rectangle { height: 1px; background: #80808028; }
+        Rectangle { height: 1px; background: AppTheme.border; }
 
         // Hauptbereich
         VerticalLayout {
@@ -1490,10 +1453,10 @@ export component MainWindow inherits Window {
             vertical-stretch: 1;
 
             if root.saving-view: Rectangle {
-                background: (Palette.color-scheme == ColorScheme.dark) ? #1e293b : #2a7fd412;
+                background: AppTheme.accent-bg;
                 border-width: 1px;
-                border-color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf866 : #2a7fd444;
-                border-radius: 6px;
+                border-color: AppTheme.accent.with-alpha(0.35);
+                border-radius: AppTheme.radius-md;
                 HorizontalLayout {
                     padding: 8px;
                     spacing: 8px;
@@ -1554,7 +1517,7 @@ export component MainWindow inherits Window {
                         clicked => { root.open-smart-sync(); }
                     }
                     Button { text: "+ Repo"; clicked => { root.adding = !root.adding; } }
-                    Rectangle { width: 1px; height: 20px; background: #80808033; y: (parent.height - self.height) / 2; }
+                    Rectangle { width: 1px; height: 20px; background: AppTheme.border; y: (parent.height - self.height) / 2; }
                     Button {
                         text: "Commit";
                         enabled: root.selected-id != "" && root.selected-dirty-count > 0 && !root.busy;
@@ -1586,7 +1549,7 @@ export component MainWindow inherits Window {
                         enabled: root.selected-id != "" && !root.busy;
                         clicked => { root.clean-repo-builds(root.selected-id); }
                     }
-                    Rectangle { width: 1px; height: 20px; background: #80808033; y: (parent.height - self.height) / 2; }
+                    Rectangle { width: 1px; height: 20px; background: AppTheme.border; y: (parent.height - self.height) / 2; }
                     Button {
                         text: root.inspector-open ? "Inspector ⯈" : "Inspector ⯇";
                         clicked => { root.inspector-open = !root.inspector-open; }
@@ -1641,7 +1604,7 @@ export component MainWindow inherits Window {
                     }
                 }
 
-                if root.error-text != "": Text { text: root.error-text; color: #e04347; wrap: word-wrap; }
+                if root.error-text != "": Text { text: root.error-text; color: AppTheme.danger; wrap: word-wrap; }
 
                 // Hauptbereich: Links schlankes DataGrid, Rechts vertikaler Pfad- & Repo-Inspector
                 HorizontalLayout {
@@ -1653,9 +1616,9 @@ export component MainWindow inherits Window {
                         horizontal-stretch: 1;
                         min-width: 220px;
                         border-width: 1px;
-                        border-color: #80808030;
-                        border-radius: 6px;
-                        background: #80808008;
+                        border-color: AppTheme.border;
+                        border-radius: AppTheme.radius-md;
+                        background: AppTheme.bg-surface;
                         clip: true;
 
                         table-scroll := ScrollView {
@@ -1668,7 +1631,7 @@ export component MainWindow inherits Window {
                             // Tabellenkopf mit Filter-ComboBoxen
                             Rectangle {
                                 height: 36px;
-                                background: #80808022;
+                                background: AppTheme.bg-subtle;
                                 HorizontalLayout {
                                     padding-left: 8px;
                                     padding-right: 8px;
@@ -1728,7 +1691,7 @@ export component MainWindow inherits Window {
                                     y: parent.height - 1px;
                                     height: 1px;
                                     width: parent.width;
-                                    background: #80808030;
+                                    background: AppTheme.border;
                                 }
                             }
 
@@ -1748,15 +1711,15 @@ export component MainWindow inherits Window {
                                     height: 36px;
                                     z: (status-ta.has-hover || commit-ta.has-hover || locations-ta.has-hover) ? 100 : 0;
                                     background: repo.id == root.selected-id
-                                        ? #2a7fd42e
-                                        : (rta.has-hover ? #80808020 : (Math.mod(idx, 2) == 1 ? #8080800c : transparent));
+                                        ? AppTheme.bg-selected
+                                        : (rta.has-hover ? AppTheme.bg-hover : (Math.mod(idx, 2) == 1 ? AppTheme.bg-subtle : transparent));
 
                                     if repo.id == root.selected-id: Rectangle {
                                         x: 0;
                                         y: 0;
                                         width: 3px;
                                         height: parent.height;
-                                        background: #2a7fd4;
+                                        background: AppTheme.accent;
                                     }
 
                                     rta := TouchArea {
@@ -1798,7 +1761,7 @@ export component MainWindow inherits Window {
                                                     font-size: 11px;
                                                     font-weight: 700;
                                                     opacity: status-ta.has-hover ? 1.0 : 0.45;
-                                                    color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8;
+                                                    color: AppTheme.accent;
                                                     vertical-alignment: center;
                                                 }
                                             }
@@ -1820,7 +1783,7 @@ export component MainWindow inherits Window {
                                                         text: repo.dirty-count > 0 ? ("✎ " + repo.dirty-count + " uncommittete Datei" + (repo.dirty-count == 1 ? "" : "en")) : "✓ Arbeitskopie ist sauber";
                                                         font-size: 11px;
                                                         font-weight: 700;
-                                                        color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8;
+                                                        color: AppTheme.accent;
                                                         horizontal-stretch: 1;
                                                     }
                                                     if repo.stash-count > 0: Badge {
@@ -1829,7 +1792,7 @@ export component MainWindow inherits Window {
                                                     }
                                                 }
 
-                                                Rectangle { height: 1px; background: #80808022; }
+                                                Rectangle { height: 1px; background: AppTheme.border; }
 
                                                 Text {
                                                     text: repo.dirty-files-preview;
@@ -1865,7 +1828,7 @@ export component MainWindow inherits Window {
                                                     text: repo.last-commit;
                                                     font-size: 12px;
                                                     font-weight: commit-ta.has-hover ? 700 : 400;
-                                                    color: commit-ta.has-hover ? ((Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8) : (Palette.color-scheme == ColorScheme.dark ? #f1f5f9 : #0f172a);
+                                                    color: commit-ta.has-hover ? AppTheme.accent : AppTheme.text-primary;
                                                     vertical-alignment: center;
                                                     overflow: elide;
                                                     horizontal-stretch: 1;
@@ -1875,7 +1838,7 @@ export component MainWindow inherits Window {
                                                     font-size: 11px;
                                                     font-weight: 700;
                                                     opacity: commit-ta.has-hover ? 1.0 : 0.4;
-                                                    color: commit-ta.has-hover ? #38bdf8 : #808080;
+                                                    color: commit-ta.has-hover ? AppTheme.accent : AppTheme.text-muted;
                                                     vertical-alignment: center;
                                                 }
                                             }
@@ -1897,7 +1860,7 @@ export component MainWindow inherits Window {
                                                         text: "Commit Details";
                                                         font-size: 11px;
                                                         font-weight: 700;
-                                                        color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8;
+                                                        color: AppTheme.accent;
                                                         horizontal-stretch: 1;
                                                     }
                                                     Badge {
@@ -1906,7 +1869,7 @@ export component MainWindow inherits Window {
                                                     }
                                                 }
 
-                                                Rectangle { height: 1px; background: #80808022; }
+                                                Rectangle { height: 1px; background: AppTheme.border; }
 
                                                 Text {
                                                     text: repo.last-commit-msg != "" ? repo.last-commit-msg : "Keine Nachricht";
@@ -1949,7 +1912,7 @@ export component MainWindow inherits Window {
                                                     text: repo.last-change;
                                                     font-size: 12px;
                                                     font-weight: repo.last-change-is-dirty ? 700 : 400;
-                                                    color: repo.last-change-is-dirty ? #d98e04 : (Palette.color-scheme == ColorScheme.dark ? #cbd5e1 : #334155);
+                                                    color: repo.last-change-is-dirty ? AppTheme.warning : AppTheme.text-secondary;
                                                     vertical-alignment: center;
                                                     overflow: elide;
                                                 }
@@ -1984,7 +1947,7 @@ export component MainWindow inherits Window {
                                             width: root.col-w-size;
                                             horizontal-alignment: right;
                                             vertical-alignment: center;
-                                            color: repo.size-kind == 2 ? #e04347 : (repo.size-kind == 1 ? #d98e04 : #2e9e5b);
+                                            color: repo.size-kind == 2 ? AppTheme.danger : (repo.size-kind == 1 ? AppTheme.warning : AppTheme.success);
                                         }
                                         ColSep {}
 
@@ -1995,7 +1958,7 @@ export component MainWindow inherits Window {
                                             width: root.col-w-build;
                                             horizontal-alignment: right;
                                             vertical-alignment: center;
-                                            color: repo.build-kind == 2 ? #e04347 : (repo.build-kind == 1 ? #d98e04 : #80808088);
+                                            color: repo.build-kind == 2 ? AppTheme.danger : (repo.build-kind == 1 ? AppTheme.warning : AppTheme.text-muted);
                                         }
                                         ColSep {}
 
@@ -2011,7 +1974,7 @@ export component MainWindow inherits Window {
                                                     text: repo.locations;
                                                     font-size: 12px;
                                                     font-weight: locations-ta.has-hover ? 700 : 400;
-                                                    color: locations-ta.has-hover ? ((Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8) : (Palette.color-scheme == ColorScheme.dark ? #f1f5f9 : #0f172a);
+                                                    color: locations-ta.has-hover ? AppTheme.accent : AppTheme.text-primary;
                                                     vertical-alignment: center;
                                                 }
                                             }
@@ -2033,12 +1996,12 @@ export component MainWindow inherits Window {
                                                         text: "Standorte (" + repo.locations + ")";
                                                         font-size: 11px;
                                                         font-weight: 700;
-                                                        color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8;
+                                                        color: AppTheme.accent;
                                                         horizontal-stretch: 1;
                                                     }
                                                 }
 
-                                                Rectangle { height: 1px; background: #80808022; }
+                                                Rectangle { height: 1px; background: AppTheme.border; }
 
                                                 Text {
                                                     text: repo.locations-preview;
@@ -2057,10 +2020,10 @@ export component MainWindow inherits Window {
                                             min-width: 120px;
                                             spacing: 6px;
                                             if repo.error-msg != "": Rectangle {
-                                                background: #e0434722;
-                                                border-color: #e0434788;
+                                                background: AppTheme.danger-bg;
+                                                border-color: AppTheme.danger.with-alpha(0.5);
                                                 border-width: 1px;
-                                                border-radius: 4px;
+                                                border-radius: AppTheme.radius-sm;
                                                 height: 22px;
                                                 y: (parent.height - self.height) / 2;
                                                 horizontal-stretch: 1;
@@ -2069,8 +2032,8 @@ export component MainWindow inherits Window {
                                                     width: parent.width - 12px;
                                                     height: parent.height;
                                                     text: "⚠ " + repo.error-msg;
-                                                    font-size: 11px;
-                                                    color: #e04347;
+                                                    font-size: AppTheme.font-size-sm;
+                                                    color: AppTheme.danger;
                                                     vertical-alignment: center;
                                                     overflow: elide;
                                                 }
@@ -2104,7 +2067,7 @@ export component MainWindow inherits Window {
                                         y: parent.height - 1px;
                                         height: 1px;
                                         width: parent.width;
-                                        background: #80808016;
+                                        background: AppTheme.border;
                                     }
                                 }
                             }
@@ -2121,7 +2084,7 @@ export component MainWindow inherits Window {
                             height: 36px;
                             y: (parent.height - self.height) / 2;
                             border-radius: 1px;
-                            background: split-ta.has-hover || split-ta.pressed ? #2a7fd4 : #80808044;
+                            background: split-ta.has-hover || split-ta.pressed ? AppTheme.accent : AppTheme.border-strong;
                         }
                         split-ta := TouchArea {
                             mouse-cursor: ew-resize;
@@ -2139,10 +2102,10 @@ export component MainWindow inherits Window {
                         preferred-width: root.inspector-width;
                         max-width: root.inspector-width;
                         horizontal-stretch: 0;
-                        background: #80808010;
+                        background: AppTheme.bg-surface;
                         border-width: 1px;
-                        border-color: #80808028;
-                        border-radius: 6px;
+                        border-color: AppTheme.border;
+                        border-radius: AppTheme.radius-md;
                         clip: true;
 
                         VerticalLayout {
@@ -2220,23 +2183,25 @@ export component MainWindow inherits Window {
                                 }
                             }
 
-                            Rectangle { height: 1px; background: #80808028; }
+                            Rectangle { height: 1px; background: AppTheme.border; }
 
-                            // Tab 0: Standorte & Pfade
-                            if root.detail-tab == 0: VerticalLayout {
-                                spacing: 6px;
+                            // Tab 0: Standorte & Pfade (komplett scrollbar, damit oben/unten nichts abgeschnitten wird)
+                            if root.detail-tab == 0: ScrollView {
                                 vertical-stretch: 1;
+                                VerticalLayout {
+                                    spacing: 6px;
+                                    alignment: start;
 
                                 // Falls kein Remote: Online-Stellen-Leiste
                                 if root.selected-id != "" && root.selected-remote == "": Rectangle {
-                                    background: #2a7fd418;
+                                    background: AppTheme.accent-bg;
                                     border-width: 1px;
-                                    border-color: #2a7fd466;
-                                    border-radius: 6px;
+                                    border-color: AppTheme.accent.with-alpha(0.4);
+                                    border-radius: AppTheme.radius-md;
                                     VerticalLayout {
                                         padding: 6px;
                                         spacing: 4px;
-                                        Text { text: "🌐 Online stellen:"; font-size: 11px; font-weight: 700; color: #2a7fd4; }
+                                        Text { text: "🌐 Online stellen:"; font-size: AppTheme.font-size-sm; font-weight: 700; color: AppTheme.accent; }
                                         HorizontalLayout {
                                             spacing: 4px;
                                             pub-url := LineEdit {
@@ -2256,18 +2221,18 @@ export component MainWindow inherits Window {
 
                                 // Schnell-Commit falls uncommittete Änderungen
                                 if root.selected-id != "" && root.selected-dirty-count > 0: Rectangle {
-                                    background: #d98e0418;
+                                    background: AppTheme.warning-bg;
                                     border-width: 1px;
-                                    border-color: #d98e0466;
-                                    border-radius: 6px;
+                                    border-color: AppTheme.warning.with-alpha(0.4);
+                                    border-radius: AppTheme.radius-md;
                                     VerticalLayout {
                                         padding: 6px;
                                         spacing: 4px;
                                         Text {
                                             text: "✎ " + root.selected-dirty-count + " uncommittete Datei(en) in " + root.selected-active-loc-name + ":";
-                                            font-size: 11px;
+                                            font-size: AppTheme.font-size-sm;
                                             font-weight: 700;
-                                            color: #d98e04;
+                                            color: AppTheme.warning;
                                         }
                                         HorizontalLayout {
                                             spacing: 4px;
@@ -2304,18 +2269,18 @@ export component MainWindow inherits Window {
 
                                 // Schnell-Push falls Commits ungesendet
                                 if root.selected-id != "" && root.selected-dirty-count == 0 && root.selected-ahead-count > 0: Rectangle {
-                                    background: #2a7fd418;
+                                    background: AppTheme.accent-bg;
                                     border-width: 1px;
-                                    border-color: #2a7fd466;
-                                    border-radius: 6px;
+                                    border-color: AppTheme.accent.with-alpha(0.4);
+                                    border-radius: AppTheme.radius-md;
                                     HorizontalLayout {
                                         padding: 6px;
                                         spacing: 6px;
                                         Text {
                                             text: "↑ " + root.selected-ahead-count + " Commit(s) ungesendet:";
-                                            font-size: 11px;
+                                            font-size: AppTheme.font-size-sm;
                                             font-weight: 700;
-                                            color: #2a7fd4;
+                                            color: AppTheme.accent;
                                             vertical-alignment: center;
                                             horizontal-stretch: 1;
                                         }
@@ -2328,17 +2293,15 @@ export component MainWindow inherits Window {
                                     }
                                 }
 
-                                // Standorte-Liste (ScrollView mit Karten)
-                                ScrollView {
-                                    vertical-stretch: 1;
-                                    VerticalLayout {
-                                        spacing: 8px;
-                                        alignment: start;
-                                        for loc in root.locations: Rectangle {
+                                // Standorte-Liste (Karten)
+                                VerticalLayout {
+                                    spacing: 8px;
+                                    alignment: start;
+                                    for loc in root.locations: Rectangle {
                                             property <bool> is-active: root.all-locations-expanded || root.active-detail-location-id == loc.id;
-                                            background: is-active ? #2a7fd418 : #8080800e;
+                                            background: is-active ? AppTheme.accent-bg : AppTheme.bg-subtle;
                                             border-width: is-active ? 2px : 1px;
-                                            border-color: is-active ? #2a7fd4cc : #80808022;
+                                            border-color: is-active ? AppTheme.accent : AppTheme.border;
                                             border-radius: 7px;
                                             opacity: loc.other-os ? 0.5 : 1.0;
 
@@ -2353,7 +2316,7 @@ export component MainWindow inherits Window {
                                                         text: "📂 " + loc.path;
                                                         font-size: 12px;
                                                         font-weight: 700;
-                                                        color: is-active ? #2a7fd4 : (Palette.color-scheme == ColorScheme.dark ? #ffffff : #18181b);
+                                                        color: is-active ? AppTheme.accent : AppTheme.text-primary;
                                                         vertical-alignment: center;
                                                         overflow: elide;
                                                         horizontal-stretch: 1;
@@ -2389,7 +2352,7 @@ export component MainWindow inherits Window {
                                                     }
                                                 }
 
-                                                Rectangle { height: 1px; background: #8080801a; }
+                                                Rectangle { height: 1px; background: AppTheme.border; }
 
                                                 // 3. Pfadspezifische 1-Klick-Aktionen (zweizeilig aufgeteilt, kein Überragen!)
                                                 if loc.other-os || loc.kind == 4: HorizontalLayout {
@@ -2448,10 +2411,10 @@ export component MainWindow inherits Window {
                                                 // 4. Aufklappbare Dirty-Dateien für diesen Pfad
                                                 if is-active && loc.dirty-files.length > 0: VerticalLayout {
                                                     spacing: 3px;
-                                                    Rectangle { height: 1px; background: #d98e0433; }
+                                                    Rectangle { height: 1px; background: AppTheme.warning.with-alpha(0.25); }
                                                     for file in loc.dirty-files: Rectangle {
                                                         height: 24px;
-                                                        background: #8080800c;
+                                                        background: AppTheme.bg-subtle;
                                                         border-radius: 4px;
                                                         HorizontalLayout {
                                                             padding-left: 6px;
@@ -2473,14 +2436,14 @@ export component MainWindow inherits Window {
 
                                                 // 5. Fehlerhinweis falls vorhanden
                                                 if loc.error-msg != "": Rectangle {
-                                                    background: #e0434718;
+                                                    background: AppTheme.danger-bg;
                                                     border-width: 1px;
-                                                    border-color: #e0434755;
-                                                    border-radius: 6px;
+                                                    border-color: AppTheme.danger.with-alpha(0.35);
+                                                    border-radius: AppTheme.radius-md;
                                                     HorizontalLayout {
                                                         padding: 6px;
                                                         spacing: 6px;
-                                                        Text { text: "⚠ " + loc.error-msg; font-size: 11px; color: #e04347; horizontal-stretch: 1; vertical-alignment: center; wrap: word-wrap; }
+                                                        Text { text: "⚠ " + loc.error-msg; font-size: AppTheme.font-size-sm; color: AppTheme.danger; horizontal-stretch: 1; vertical-alignment: center; wrap: word-wrap; }
                                                         Button { text: "safe.directory"; clicked => { root.location-action(loc.id, "trust"); } }
                                                     }
                                                 }
@@ -2492,7 +2455,7 @@ export component MainWindow inherits Window {
                                 // In Basispfad erstellen & Standort hinzufügen
                                 if root.missing-base-paths.length > 0: HorizontalLayout {
                                     spacing: 4px;
-                                    Text { text: "+ Basispfad:"; font-size: 11px; font-weight: 700; color: #2a7fd4; vertical-alignment: center; }
+                                    Text { text: "+ Basispfad:"; font-size: AppTheme.font-size-sm; font-weight: 700; color: AppTheme.accent; vertical-alignment: center; }
                                     for mbp in root.missing-base-paths: Button {
                                         text: "+ " + mbp.label;
                                         clicked => { root.create-in-base-path(root.selected-id, mbp.target-path); }
@@ -2516,6 +2479,7 @@ export component MainWindow inherits Window {
                                         Button { text: "Verknüpfen"; clicked => { root.link-location(root.selected-id, root.new-location-path); root.new-location-path = ""; } }
                                         if root.selected-remote != "": Button { text: "Klonen"; clicked => { root.clone-location(root.selected-id, root.new-location-path); root.new-location-path = ""; } }
                                     }
+                                }
                                 }
                             }
 
@@ -2575,7 +2539,7 @@ export component MainWindow inherits Window {
                                         Text { text: "Commits / Woche"; font-size: 11px; font-weight: 600; }
                                         BarChart { height: 100px; items: root.stat-weeks; }
                                         Text { text: "Commits / Monat"; font-size: 11px; font-weight: 600; }
-                                        BarChart { height: 100px; items: root.stat-months; bar-color: #2e9e5b; }
+                                        BarChart { height: 100px; items: root.stat-months; bar-color: AppTheme.success; }
                                         Text { text: "Top-Autoren"; font-size: 11px; font-weight: 600; }
                                         AuthorBars { items: root.stat-authors; }
                                     }
@@ -2651,7 +2615,7 @@ export component MainWindow inherits Window {
                                     text: root.selected-dirty-files.length == 0 ? "✓ Keine uncommitteten Änderungen" : ("✎ " + root.selected-dirty-files.length + " geänderte Datei(en)");
                                     font-size: 12px;
                                     font-weight: 700;
-                                    color: root.selected-dirty-files.length == 0 ? #2e9e5b : #d98e04;
+                                    color: root.selected-dirty-files.length == 0 ? AppTheme.success : AppTheme.warning;
                                 }
                                 ScrollView {
                                     vertical-stretch: 1;
@@ -2660,7 +2624,7 @@ export component MainWindow inherits Window {
                                         alignment: start;
                                         for file in root.selected-dirty-files: Rectangle {
                                             height: 28px;
-                                            background: #80808008;
+                                            background: AppTheme.bg-subtle;
                                             border-radius: 4px;
                                             HorizontalLayout {
                                                 padding-left: 6px;
@@ -2689,9 +2653,9 @@ export component MainWindow inherits Window {
             // Schlanke 1-Zeilen-Statusleiste für ausgewähltes Repository (Option 3)
             Rectangle {
                 height: 28px;
-                background: #80808012;
+                background: AppTheme.bg-subtle;
                 border-width: 1px;
-                border-color: #80808020;
+                border-color: AppTheme.border;
 
                 HorizontalLayout {
                     padding-left: 12px;
@@ -2748,7 +2712,7 @@ export component MainWindow inherits Window {
                                     text: root.selected-dirty-count > 0 ? ("·  ✎ " + root.selected-dirty-count + " geändert") : "·  ✓ sauber";
                                     font-size: 11px;
                                     font-weight: root.selected-dirty-count > 0 ? 700 : 400;
-                                    color: root.selected-dirty-count > 0 ? #d98e04 : #2e9e5b;
+                                    color: root.selected-dirty-count > 0 ? AppTheme.warning : AppTheme.success;
                                     vertical-alignment: center;
                                 }
 
@@ -2757,7 +2721,7 @@ export component MainWindow inherits Window {
                                           ("·  " + (root.selected-ahead-count > 0 ? ("↑" + root.selected-ahead-count + " ") : "") + (root.selected-behind-count > 0 ? ("↓" + root.selected-behind-count) : "")) :
                                           "·  ✓ synchron";
                                     font-size: 11px;
-                                    color: (root.selected-ahead-count > 0 || root.selected-behind-count > 0) ? #2a7fd4 : #2e9e5b;
+                                    color: (root.selected-ahead-count > 0 || root.selected-behind-count > 0) ? AppTheme.accent : AppTheme.success;
                                     vertical-alignment: center;
                                 }
                             }
@@ -2783,7 +2747,7 @@ export component MainWindow inherits Window {
             // Kompakter Fußbalken (32px), bei Bedarf aufklappbar
             Rectangle {
                 height: root.tasks-open ? 140px : 32px;
-                background: #80808018;
+                background: AppTheme.bg-subtle;
                 VerticalLayout {
                     padding-left: 12px;
                     padding-right: 12px;

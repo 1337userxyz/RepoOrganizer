@@ -7,26 +7,26 @@ use repoorganizer_core::scan::ScanClass;
 use repoorganizer_core::stats::summarize;
 use repoorganizer_core::views::BUILTIN;
 use repoorganizer_git::{guard_pull, guard_push};
-use slint::{ModelRc, SharedString, VecModel};
+use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
 use crate::ops::plan_smart_sync;
 use crate::state::*;
 use crate::{
-    present, CheckRow, DirtyFileRow, DirtyLocFilterItem, HeatItem, InfoRow, LocationRow, MainWindow, MappingRow,
+    present, AppTheme, CheckRow, DirtyFileRow, DirtyLocFilterItem, HeatItem, InfoRow, LocationRow, MainWindow, MappingRow,
     MissingBasePathRow, RepoRow, ScanRow, SettingsWindow, SmartSyncLogRow, SmartSyncWindow, TaskRow, ViewRow,
 };
 
 pub fn apply_theme_all(ui: &MainWindow, st: &State) {
     let t: SharedString = st.local.theme.as_str().into();
-    ui.invoke_apply_theme(t.clone());
+    ui.global::<AppTheme>().invoke_apply(t.clone());
     if let Some(sw) = st.scan_win.as_ref().and_then(|w| w.upgrade()) {
-        sw.invoke_apply_theme(t.clone());
+        sw.global::<AppTheme>().invoke_apply(t.clone());
     }
     if let Some(cfgw) = st.settings_win.as_ref().and_then(|w| w.upgrade()) {
-        cfgw.invoke_apply_theme(t.clone());
+        cfgw.global::<AppTheme>().invoke_apply(t.clone());
     }
     if let Some(ssw) = st.smart_sync_win.as_ref().and_then(|w| w.upgrade()) {
-        ssw.invoke_apply_theme(t);
+        ssw.global::<AppTheme>().invoke_apply(t);
     }
 }
 
