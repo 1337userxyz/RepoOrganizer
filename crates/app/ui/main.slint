@@ -1238,8 +1238,8 @@ export component SmartSyncWindow inherits Window {
 
 export component MainWindow inherits Window {
     title: "RepoOrganizer v0.1.0";
-    min-width: 1080px;
-    min-height: 680px;
+    min-width: 640px;
+    min-height: 460px;
     preferred-width: 1360px;
     preferred-height: 840px;
 
@@ -1298,6 +1298,7 @@ export component MainWindow inherits Window {
     // Dynamische Höhe des Detail-Panels & Aktivierung einzelner Detailansichten
     in-out property <length> detail-panel-height: 0px;
     in-out property <bool> inspector-open: true;
+    in-out property <length> inspector-width: 440px;
     in-out property <string> active-detail-location-id: "";
     in-out property <bool> all-locations-expanded: false;
 
@@ -1337,6 +1338,10 @@ export component MainWindow inherits Window {
     in-out property <length> col-w-size: 58px;
     in-out property <length> col-w-build: 62px;
     in-out property <length> col-w-locations: 36px;
+
+    property <length> table-min-width: 16px + root.col-w-repo + root.col-w-status + root.col-w-branch
+        + root.col-w-commit + root.col-w-change + root.col-w-commits + root.col-w-files
+        + root.col-w-size + root.col-w-build + root.col-w-locations + 60px + 120px;
 
     in-out property <bool> selected-clean-keep-binary: false;
     callback toggle-repo-clean-keep-binary(string, bool);
@@ -1397,69 +1402,81 @@ export component MainWindow inherits Window {
         Rectangle {
             height: 44px;
             background: #80808012;
-            HorizontalLayout {
-                padding-left: 12px;
-                padding-right: 12px;
-                padding-top: 6px;
-                padding-bottom: 6px;
-                spacing: 10px;
+            clip: true;
+            top-bar-scroll := Flickable {
+                width: 100%;
+                height: 100%;
+                interactive: top-bar-row.min-width > self.width;
+                content-width: top-bar-row.width;
+                content-height: self.height;
 
-                Text {
-                    text: "📂 RepoOrganizer";
-                    font-size: 16px;
-                    font-weight: 800;
-                    color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8;
-                    vertical-alignment: center;
-                }
+                top-bar-row := HorizontalLayout {
+                    width: max(top-bar-scroll.width, self.min-width);
+                    height: top-bar-scroll.height;
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    padding-top: 6px;
+                    padding-bottom: 6px;
+                    spacing: 10px;
 
-                Rectangle { width: 1px; height: 20px; background: #80808033; y: (parent.height - self.height) / 2; }
+                    Text {
+                        text: "📂 RepoOrganizer";
+                        font-size: 16px;
+                        font-weight: 800;
+                        color: (Palette.color-scheme == ColorScheme.dark) ? #38bdf8 : #1d4ed8;
+                        vertical-alignment: center;
+                    }
 
-                Text {
-                    text: "Ansicht:";
-                    font-size: 12px;
-                    font-weight: 700;
-                    opacity: 0.85;
-                    vertical-alignment: center;
-                }
+                    Rectangle { width: 1px; height: 20px; background: #80808033; y: (parent.height - self.height) / 2; }
 
-                ComboBox {
-                    width: 220px;
-                    model: root.view-options;
-                    current-index <=> root.selected-view-index;
-                    selected => {
-                        if root.selected-view-index >= 0 && root.selected-view-index < root.views.length {
-                            root.select-view(root.views[root.selected-view-index].key);
+                    Text {
+                        text: "Ansicht:";
+                        font-size: 12px;
+                        font-weight: 700;
+                        opacity: 0.85;
+                        vertical-alignment: center;
+                    }
+
+                    ComboBox {
+                        min-width: 130px;
+                        preferred-width: 220px;
+                        model: root.view-options;
+                        current-index <=> root.selected-view-index;
+                        selected => {
+                            if root.selected-view-index >= 0 && root.selected-view-index < root.views.length {
+                                root.select-view(root.views[root.selected-view-index].key);
+                            }
                         }
                     }
-                }
 
-                Button {
-                    text: "+ Ansicht speichern…";
-                    clicked => { root.saving-view = !root.saving-view; }
-                }
+                    Button {
+                        text: "+ Ansicht speichern…";
+                        clicked => { root.saving-view = !root.saving-view; }
+                    }
 
-                if root.active-view-is-custom: Button {
-                    text: "🗑 Ansicht löschen";
-                    clicked => {
-                        if root.selected-view-index >= 0 && root.selected-view-index < root.views.length {
-                            root.delete-view(root.views[root.selected-view-index].name);
+                    if root.active-view-is-custom: Button {
+                        text: "🗑 Ansicht löschen";
+                        clicked => {
+                            if root.selected-view-index >= 0 && root.selected-view-index < root.views.length {
+                                root.delete-view(root.views[root.selected-view-index].name);
+                            }
                         }
                     }
-                }
 
-                Rectangle { horizontal-stretch: 1; }
+                    Rectangle { horizontal-stretch: 1; }
 
-                Button {
-                    text: "🔍 Scan-Assistent…";
-                    clicked => { root.open-scan(); }
-                }
-                Button {
-                    text: "🧹 Builds leeren";
-                    clicked => { root.clean-all-builds(); }
-                }
-                Button {
-                    text: "⚙ Einstellungen…";
-                    clicked => { root.open-settings(); }
+                    Button {
+                        text: "🔍 Scan-Assistent…";
+                        clicked => { root.open-scan(); }
+                    }
+                    Button {
+                        text: "🧹 Builds leeren";
+                        clicked => { root.clean-all-builds(); }
+                    }
+                    Button {
+                        text: "⚙ Einstellungen…";
+                        clicked => { root.open-settings(); }
+                    }
                 }
             }
         }
@@ -1502,9 +1519,17 @@ export component MainWindow inherits Window {
                 }
             }
 
-                HorizontalLayout {
+            toolbar2-scroll := Flickable {
+                height: toolbar2-row.preferred-height;
+                interactive: toolbar2-row.min-width > self.width;
+                content-width: toolbar2-row.width;
+                content-height: toolbar2-row.preferred-height;
+
+                toolbar2-row := HorizontalLayout {
+                    width: max(toolbar2-scroll.width, self.min-width);
                     spacing: 6px;
                     LineEdit {
+                        min-width: 120px;
                         placeholder-text: "Suchen (Name, Tag, Remote)…";
                         horizontal-stretch: 1;
                         edited(t) => { root.filter-changed(t); }
@@ -1567,6 +1592,7 @@ export component MainWindow inherits Window {
                         clicked => { root.inspector-open = !root.inspector-open; }
                     }
                 }
+            }
 
                 if root.adding: HorizontalLayout {
                     spacing: 8px;
@@ -1617,21 +1643,28 @@ export component MainWindow inherits Window {
 
                 if root.error-text != "": Text { text: root.error-text; color: #e04347; wrap: word-wrap; }
 
-                                // Hauptbereich: Links schlankes DataGrid, Rechts vertikaler Pfad- & Repo-Inspector
+                // Hauptbereich: Links schlankes DataGrid, Rechts vertikaler Pfad- & Repo-Inspector
                 HorizontalLayout {
                     vertical-stretch: 1;
-                    spacing: 8px;
+                    spacing: 4px;
 
-                    // Linker Bereich: Repository-DataGrid (volle Höhe!)
-                    Rectangle {
+                    // Linker Bereich: Repository-DataGrid (volle Höhe, horizontal scrollbar bei kleinen Monitoren!)
+                    table-panel := Rectangle {
                         horizontal-stretch: 1;
+                        min-width: 220px;
                         border-width: 1px;
                         border-color: #80808030;
                         border-radius: 6px;
                         background: #80808008;
                         clip: true;
 
-                        VerticalLayout {
+                        table-scroll := ScrollView {
+                            width: 100%;
+                            height: 100%;
+
+                            VerticalLayout {
+                                width: max(table-panel.width - 2px, root.table-min-width);
+                                height: table-scroll.visible-height;
                             // Tabellenkopf mit Filter-ComboBoxen
                             Rectangle {
                                 height: 36px;
@@ -2076,11 +2109,36 @@ export component MainWindow inherits Window {
                                 }
                             }
                         }
+                        }
+                    }
+
+                    // Verschiebbarer Splitter zwischen Tabelle und Detail-Panel
+                    if root.inspector-open && root.selected-id != "": Rectangle {
+                        width: 6px;
+                        Rectangle {
+                            x: (parent.width - 1px) / 2;
+                            width: 2px;
+                            height: 36px;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 1px;
+                            background: split-ta.has-hover || split-ta.pressed ? #2a7fd4 : #80808044;
+                        }
+                        split-ta := TouchArea {
+                            mouse-cursor: ew-resize;
+                            moved => {
+                                if (self.pressed) {
+                                    root.inspector-width = max(280px, min(680px, root.inspector-width - (self.mouse-x - self.pressed-x)));
+                                }
+                            }
+                        }
                     }
 
                     // Rechter Bereich: Pfad- & Repo-Inspector (vertikal, nebeneinander mit voller Höhe!)
                     if root.inspector-open && root.selected-id != "": Rectangle {
-                        width: 440px;
+                        min-width: 260px;
+                        preferred-width: root.inspector-width;
+                        max-width: root.inspector-width;
+                        horizontal-stretch: 0;
                         background: #80808010;
                         border-width: 1px;
                         border-color: #80808028;
@@ -2139,19 +2197,27 @@ export component MainWindow inherits Window {
                                 }
                             }
 
-                            // 3. Tab-Leiste (kompakt ohne Umbruch)
-                            HorizontalLayout {
-                                spacing: 3px;
-                                Button { text: "Orte (" + root.locations.length + ")"; primary: root.detail-tab == 0; clicked => { root.detail-tab = 0; } }
-                                Button {
-                                    text: "Dateien" + (root.selected-dirty-files.length > 0 ? (" (" + root.selected-dirty-files.length + ")") : "");
-                                    primary: root.detail-tab == 5;
-                                    clicked => { root.detail-tab = 5; }
+                            // 3. Tab-Leiste (horizontal scrollbar falls schmal)
+                            tab-scroll := Flickable {
+                                height: tab-row.preferred-height;
+                                interactive: tab-row.min-width > self.width;
+                                content-width: tab-row.width;
+                                content-height: tab-row.preferred-height;
+
+                                tab-row := HorizontalLayout {
+                                    width: max(tab-scroll.width, self.min-width);
+                                    spacing: 3px;
+                                    Button { text: "Orte (" + root.locations.length + ")"; primary: root.detail-tab == 0; clicked => { root.detail-tab = 0; } }
+                                    Button {
+                                        text: "Dateien" + (root.selected-dirty-files.length > 0 ? (" (" + root.selected-dirty-files.length + ")") : "");
+                                        primary: root.detail-tab == 5;
+                                        clicked => { root.detail-tab = 5; }
+                                    }
+                                    Button { text: "Drift (" + root.drift-rows.length + ")"; primary: root.detail-tab == 1; clicked => { root.detail-tab = 1; } }
+                                    Button { text: "Stats"; primary: root.detail-tab == 3; clicked => { root.detail-tab = 3; root.load-stats(root.selected-id, false); } }
+                                    Button { text: "Health"; primary: root.detail-tab == 2; clicked => { root.detail-tab = 2; } }
+                                    Button { text: "Meta"; primary: root.detail-tab == 4; clicked => { root.detail-tab = 4; } }
                                 }
-                                Button { text: "Drift (" + root.drift-rows.length + ")"; primary: root.detail-tab == 1; clicked => { root.detail-tab = 1; } }
-                                Button { text: "Stats"; primary: root.detail-tab == 3; clicked => { root.detail-tab = 3; root.load-stats(root.selected-id, false); } }
-                                Button { text: "Health"; primary: root.detail-tab == 2; clicked => { root.detail-tab = 2; } }
-                                Button { text: "Meta"; primary: root.detail-tab == 4; clicked => { root.detail-tab = 4; } }
                             }
 
                             Rectangle { height: 1px; background: #80808028; }
@@ -2636,6 +2702,7 @@ export component MainWindow inherits Window {
                     // Klickbarer Infobereich
                     TouchArea {
                         horizontal-stretch: 1;
+                        min-width: 0px;
                         mouse-cursor: pointer;
                         clicked => {
                             root.inspector-open = !root.inspector-open;
