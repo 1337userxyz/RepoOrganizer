@@ -31,21 +31,35 @@ done
 
 # Abhängigkeit slint-desktop-kit absichern (insbesondere auf RAM-Disk /r)
 PARENT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-if [ ! -e "$PARENT_DIR/slint-desktop-kit" ]; then
-    rm -f "$PARENT_DIR/slint-desktop-kit" 2>/dev/null || true
-    if [ -d "$HOME/Projekte/slint-desktop-kit" ]; then
+SLINT_KIT_DIR="$PARENT_DIR/slint-desktop-kit"
+
+if [ ! -f "$SLINT_KIT_DIR/Cargo.toml" ]; then
+    rm -rf "$SLINT_KIT_DIR" 2>/dev/null || true
+    if [ -f "$HOME/Projekte/slint-desktop-kit/Cargo.toml" ]; then
         echo "🔗 Verlinke Abhängigkeit slint-desktop-kit aus ~/Projekte..."
-        ln -s "$HOME/Projekte/slint-desktop-kit" "$PARENT_DIR/slint-desktop-kit"
-    elif [ -d "$HOME/projekte/slint-desktop-kit" ]; then
+        ln -s "$HOME/Projekte/slint-desktop-kit" "$SLINT_KIT_DIR"
+    elif [ -f "$HOME/projekte/slint-desktop-kit/Cargo.toml" ]; then
         echo "🔗 Verlinke Abhängigkeit slint-desktop-kit aus ~/projekte..."
-        ln -s "$HOME/projekte/slint-desktop-kit" "$PARENT_DIR/slint-desktop-kit"
+        ln -s "$HOME/projekte/slint-desktop-kit" "$SLINT_KIT_DIR"
+    elif [ -f "$HOME/git/slint-desktop-kit/Cargo.toml" ]; then
+        echo "🔗 Verlinke Abhängigkeit slint-desktop-kit aus ~/git..."
+        ln -s "$HOME/git/slint-desktop-kit" "$SLINT_KIT_DIR"
+    else
+        echo "📥 Klone fehlende Abhängigkeit slint-desktop-kit von GitHub..."
+        git clone https://github.com/1337userxyz/slint-desktop-kit.git "$SLINT_KIT_DIR"
     fi
+fi
+
+# Falls das Repository veraltet ist und benötigte Crates fehlen (z.B. kit-theme):
+if [ -d "$SLINT_KIT_DIR/.git" ] && [ ! -f "$SLINT_KIT_DIR/crates/kit-theme/Cargo.toml" ]; then
+    echo "🔄 Aktualisiere slint-desktop-kit (git pull)..."
+    git -C "$SLINT_KIT_DIR" pull --ff-only 2>/dev/null || true
 fi
 
 # Bei Änderungen stets aktuell bauen (mit sichtbarer Ausgabe)
 echo "🔨 Prüfe / Baue RepoOrganizer..."
 set +e
-cargo build -p repoorganizer
+RUSTFLAGS="-C link-arg=-Wl,-rpath,$LD_LIBRARY_PATH ${RUSTFLAGS:-}" cargo build -p repoorganizer
 BUILD_STATUS=$?
 set -e
 
