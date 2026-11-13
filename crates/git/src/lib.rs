@@ -198,6 +198,69 @@ impl CliGit {
         self.run_all(repo, &["switch", branch])
     }
 
+    /// Übernimmt den aktuellen temporären Branch nach `main`, pusht `main` und entfernt den alten Branch.
+    pub fn promote_branch_to_main(&self, repo: &Path) -> Result<String, GitError> {
+        let cur = self.run(repo, &["rev-parse", "--abbrev-ref", "HEAD"])?.trim().to_string();
+        if cur.is_empty() || cur == "HEAD" {
+            return Err(GitError::Failed {
+                args: "promote_main".into(),
+                stderr: "Kein aktiver Branch (detached HEAD).".into(),
+            });
+        }
+        if cur == "main" {
+            return Err(GitError::Failed {
+                args: "promote_main".into(),
+                stderr: "Bereits auf Branch 'main'.".into(),
+            });
+        }
+        let status = self.run(repo, &["status", "--porcelain"])?;
+        if !status.trim().is_empty() {
+            return Err(GitError::Failed {
+                args: "promote_main".into(),
+                stderr: "Arbeitsverzeichnis hat uncommittete Änderungen — bitte zuerst committen oder stashen.".into(),
+            });
+        }
+
+        let has_origin = self.remote_origin(repo).is_some();
+        if has_origin {
+            let _ = self.run_all(repo, &["fetch", "origin", "--prune"]);
+        }
+
+        let local_main = self.run(repo, &["show-ref", "--verify", "--quiet", "refs/heads/main"]).is_ok();
+        let remote_main = has_origin
+            && self.run(repo, &["show-ref", "--verify", "--quiet", "refs/remotes/origin/main"]).is_ok();
+        let remote_cur = has_origin
+            && self.run(repo, &["show-ref", "--verify", "--quiet", &format!("refs/remotes/origin/{cur}")]).is_ok();
+
+        if local_main {
+            self.run_all(repo, &["switch", "main"])?;
+            if remote_main {
+                let _ = self.run_all(repo, &["merge", "--ff-only", "origin/main"]);
+            }
+            self.run_all(repo, &["merge", "--no-edit", &cur])?;
+            self.run_all(repo, &["branch", "-d", &cur])?;
+        } else if remote_main {
+            self.run_all(repo, &["switch", "-c", "main", "--track", "origin/main"])?;
+            self.run_all(repo, &["merge", "--no-edit", &cur])?;
+            self.run_all(repo, &["branch", "-d", &cur])?;
+        } else {
+            self.run_all(repo, &["branch", "-m", &cur, "main"])?;
+        }
+
+        if has_origin {
+            self.run_all(repo, &["push", "-u", "origin", "main"])?;
+            if remote_cur {
+                if let Err(e) = self.run_all(repo, &["push", "origin", "--delete", &cur]) {
+                    return Ok(format!(
+                        "'{cur}' → 'main' übernommen & gepusht (Remote-Branch '{cur}' konnte nicht gelöscht werden: {e})"
+                    ));
+                }
+            }
+        }
+
+        Ok(format!("Branch '{cur}' → 'main' übernommen und entfernt"))
+    }
+
     pub fn trust_directory(&self, repo: &Path) -> Result<String, GitError> {
         let p = repo.to_string_lossy().replace('\\', "/");
         let out = Command::new(&self.git_path).args(["config", "--global", "--add", "safe.directory", &p]).output()?;

@@ -2199,19 +2199,33 @@ export component MainWindow inherits Window {
                                     border-color: AppTheme.accent.with-alpha(0.4);
                                     border-radius: AppTheme.radius-md;
                                     VerticalLayout {
-                                        padding: 6px;
-                                        spacing: 4px;
+                                        padding: 8px;
+                                        spacing: 6px;
                                         Text { text: "🌐 Online stellen:"; font-size: AppTheme.font-size-sm; font-weight: 700; color: AppTheme.accent; }
                                         HorizontalLayout {
                                             spacing: 4px;
+                                            height: 28px;
+                                            Text { text: "Neu auf GitHub:"; font-size: AppTheme.font-size-sm; vertical-alignment: center; }
+                                            Button {
+                                                text: "Privat erstellen & Push";
+                                                primary: true;
+                                                clicked => { root.publish-github(root.selected-id, true); }
+                                            }
+                                            Button {
+                                                text: "Öffentlich erstellen & Push";
+                                                clicked => { root.publish-github(root.selected-id, false); }
+                                            }
+                                        }
+                                        HorizontalLayout {
+                                            spacing: 4px;
+                                            height: 28px;
                                             pub-url := LineEdit {
                                                 text: root.suggested-remote;
-                                                placeholder-text: "Remote-URL…";
+                                                placeholder-text: "Oder bestehende Remote-URL…";
                                                 horizontal-stretch: 1;
                                             }
                                             Button {
-                                                text: "Verbinden & Push";
-                                                primary: true;
+                                                text: "URL verbinden & Push";
                                                 enabled: pub-url.text != "";
                                                 clicked => { root.publish-remote(root.selected-id, pub-url.text, true); }
                                             }
@@ -2380,7 +2394,7 @@ export component MainWindow inherits Window {
                                                     }
 
                                                     // Zeile B: Git-Aktionen (nur wenn anstehend)
-                                                    if loc.behind > 0 || loc.ahead > 0 || loc.can-clean || loc.dirty > 0: HorizontalLayout {
+                                                    if loc.behind > 0 || loc.ahead > 0 || loc.can-clean || loc.dirty > 0 || (loc.branch != "" && loc.branch != "main" && loc.branch != "HEAD"): HorizontalLayout {
                                                         spacing: 4px;
                                                         alignment: start;
                                                         if loc.behind > 0: Button {
@@ -2394,6 +2408,11 @@ export component MainWindow inherits Window {
                                                             primary: true;
                                                             enabled: loc.can-push && root.selected-remote != "";
                                                             clicked => { root.location-action(loc.id, "push"); }
+                                                        }
+                                                        if loc.branch != "" && loc.branch != "main" && loc.branch != "HEAD": Button {
+                                                            text: "⎇ → main";
+                                                            enabled: loc.dirty == 0;
+                                                            clicked => { root.location-action(loc.id, "promote_main"); }
                                                         }
                                                         if loc.can-clean: Button {
                                                             text: "🧹 Clean (" + loc.build-size + ")";
@@ -2450,7 +2469,6 @@ export component MainWindow inherits Window {
                                             }
                                         }
                                     }
-                                }
 
                                 // In Basispfad erstellen & Standort hinzufügen
                                 if root.missing-base-paths.length > 0: HorizontalLayout {
@@ -2550,63 +2568,77 @@ export component MainWindow inherits Window {
                             if root.detail-tab == 4: ScrollView {
                                 vertical-stretch: 1;
                                 VerticalLayout {
+                                    padding: 2px;
                                     spacing: 8px;
                                     alignment: start;
-                                HorizontalLayout {
-                                    spacing: 6px;
-                                    Text { text: "Remote-URL:"; font-size: 11px; font-weight: 600; width: 80px; vertical-alignment: center; }
-                                    remote-edit := LineEdit {
-                                        text: root.selected-remote != "" ? root.selected-remote : root.suggested-remote;
-                                        placeholder-text: "z. B. https://github.com/user/repo.git";
-                                        horizontal-stretch: 1;
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        height: 28px;
+                                        Text { text: "Remote-URL:"; font-size: 11px; font-weight: 600; width: 84px; vertical-alignment: center; }
+                                        remote-edit := LineEdit {
+                                            text: root.selected-remote != "" ? root.selected-remote : root.suggested-remote;
+                                            placeholder-text: "z. B. https://github.com/user/repo.git";
+                                            horizontal-stretch: 1;
+                                        }
+                                        Button {
+                                            text: "URL setzen & Push";
+                                            enabled: root.selected-id != "" && remote-edit.text != "";
+                                            clicked => { root.publish-remote(root.selected-id, remote-edit.text, true); }
+                                        }
                                     }
-                                }
-                                HorizontalLayout {
-                                    spacing: 6px;
-                                    Button {
-                                        text: "Remote setzen & Pushen";
-                                        enabled: root.selected-id != "" && remote-edit.text != "";
-                                        clicked => { root.publish-remote(root.selected-id, remote-edit.text, true); }
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        height: 28px;
+                                        Text { text: "Neu auf GitHub:"; font-size: 11px; font-weight: 600; width: 84px; vertical-alignment: center; }
+                                        Button {
+                                            text: "Privat erstellen & Push";
+                                            enabled: root.selected-id != "";
+                                            clicked => { root.publish-github(root.selected-id, true); }
+                                        }
+                                        Button {
+                                            text: "Öffentlich erstellen & Push";
+                                            enabled: root.selected-id != "";
+                                            clicked => { root.publish-github(root.selected-id, false); }
+                                        }
                                     }
-                                    Button {
-                                        text: "GitHub (Privat)";
-                                        enabled: root.selected-id != "";
-                                        clicked => { root.publish-github(root.selected-id, true); }
+                                    Rectangle { height: 1px; background: AppTheme.border; }
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        height: 28px;
+                                        Text { text: "Tags:"; font-size: 11px; font-weight: 600; width: 84px; vertical-alignment: center; }
+                                        tags-edit := LineEdit { text: root.selected-tags; placeholder-text: "z. B. rust, work"; horizontal-stretch: 1; }
                                     }
-                                }
-                                HorizontalLayout {
-                                    spacing: 6px;
-                                    Text { text: "Tags:"; font-size: 11px; font-weight: 600; width: 80px; vertical-alignment: center; }
-                                    tags-edit := LineEdit { text: root.selected-tags; placeholder-text: "z. B. rust, work"; horizontal-stretch: 1; }
-                                }
-                                HorizontalLayout {
-                                    spacing: 6px;
-                                    Text { text: "Notizen:"; font-size: 11px; font-weight: 600; width: 80px; vertical-alignment: center; }
-                                    notes-edit := LineEdit { text: root.selected-notes; placeholder-text: "Notizen zum Repo…"; horizontal-stretch: 1; }
-                                }
-                                HorizontalLayout {
-                                    spacing: 6px;
-                                    Text { text: "Optionen:"; font-size: 11px; font-weight: 600; width: 80px; vertical-alignment: center; }
-                                    CheckBox {
-                                        text: "Binary bei Clean behalten (vorerst nur Rust)";
-                                        checked <=> root.selected-clean-keep-binary;
-                                        toggled => { root.toggle-repo-clean-keep-binary(root.selected-id, root.selected-clean-keep-binary); }
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        height: 28px;
+                                        Text { text: "Notizen:"; font-size: 11px; font-weight: 600; width: 84px; vertical-alignment: center; }
+                                        notes-edit := LineEdit { text: root.selected-notes; placeholder-text: "Notizen zum Repo…"; horizontal-stretch: 1; }
                                     }
-                                }
-                                HorizontalLayout {
-                                    spacing: 6px;
-                                    Button {
-                                        text: "Speichern";
-                                        primary: true;
-                                        enabled: root.selected-id != "";
-                                        clicked => { root.save-repo-meta(root.selected-id, remote-edit.text, tags-edit.text, notes-edit.text, root.selected-clean-keep-binary); }
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        height: 26px;
+                                        Text { text: "Optionen:"; font-size: 11px; font-weight: 600; width: 84px; vertical-alignment: center; }
+                                        CheckBox {
+                                            text: "Binary bei Clean behalten (vorerst nur Rust)";
+                                            checked <=> root.selected-clean-keep-binary;
+                                            toggled => { root.toggle-repo-clean-keep-binary(root.selected-id, root.selected-clean-keep-binary); }
+                                        }
                                     }
-                                    Button {
-                                        text: "Repo entfernen";
-                                        enabled: root.selected-id != "";
-                                        clicked => { root.delete-repo(root.selected-id); }
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        height: 30px;
+                                        Button {
+                                            text: "Speichern";
+                                            primary: true;
+                                            enabled: root.selected-id != "";
+                                            clicked => { root.save-repo-meta(root.selected-id, remote-edit.text, tags-edit.text, notes-edit.text, root.selected-clean-keep-binary); }
+                                        }
+                                        Button {
+                                            text: "Repo entfernen";
+                                            enabled: root.selected-id != "";
+                                            clicked => { root.delete-repo(root.selected-id); }
+                                        }
                                     }
-                                }
                                 }
                             }
 

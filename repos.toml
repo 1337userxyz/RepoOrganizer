@@ -30,6 +30,11 @@ name = "local-agent-studio"
 remote_url = "https://github.com/1337userxyz/local-agent-studio.git"
 
 [[repo]]
+id = "net-atlas"
+name = "net-atlas"
+remote_url = "https://github.com/1337userxyz/net-atlas.git"
+
+[[repo]]
 id = "networkdrivemanager"
 name = "NetworkDriveManager"
 remote_url = "https://github.com/1337userxyz/NetworkDriveManager.git"
@@ -133,6 +138,17 @@ role = "primary"
 windows = 'R:\git\local-agent-studio'
 linux = "/r/git/local-agent-studio"
 macos = "/r/git/local-agent-studio"
+
+[[location]]
+id = "net-atlas-1"
+repo_id = "net-atlas"
+label = "net-atlas"
+role = "primary"
+
+[location.paths]
+windows = 'R:\git\net-atlas'
+linux = "/r/git/net-atlas"
+macos = "/r/git/net-atlas"
 
 [[location]]
 id = "networkdrivemanager-1"
