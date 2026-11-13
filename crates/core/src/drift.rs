@@ -1,6 +1,5 @@
 //! Drift-Erkennung: Vergleich der Standorte eines Repos.
 use crate::level::Level;
-use crate::text::ago;
 
 #[derive(Debug, Clone)]
 pub struct DriftLoc {
@@ -20,12 +19,15 @@ pub struct Message {
 }
 
 /// `rel(i, j)` liefert (Commits in i, die j fehlen; Commits in j, die i fehlen).
-pub fn drift_messages(locs: &[DriftLoc], rel: &mut dyn FnMut(usize, usize) -> Option<(u32, u32)>, now: i64) -> Vec<Message> {
+pub fn drift_messages(locs: &[DriftLoc], rel: &mut dyn FnMut(usize, usize) -> Option<(u32, u32)>, _now: i64) -> Vec<Message> {
     let mut out = Vec::new();
     let mut msg = |level, text: String| out.push(Message { level, text });
     for i in 0..locs.len() {
         for j in (i + 1)..locs.len() {
             let (a, b) = (&locs[i], &locs[j]);
+            if !a.reachable || !b.reachable {
+                continue;
+            }
             let (Some(sa), Some(sb)) = (&a.head_sha, &b.head_sha) else { continue };
             if sa == sb {
                 continue;
@@ -35,14 +37,6 @@ pub fn drift_messages(locs: &[DriftLoc], rel: &mut dyn FnMut(usize, usize) -> Op
                     msg(Level::Warn, format!("{} ({ba}) und {} ({bb}) stehen auf verschiedenen Branches", a.label, b.label));
                     continue;
                 }
-            }
-            if !a.reachable || !b.reachable {
-                let (off, on) = if !a.reachable { (a, b) } else { (b, a) };
-                msg(
-                    Level::Warn,
-                    format!("{} ist offline (Stand {}) und weicht von {} ab – veraltet", off.label, ago(off.stale_at, now), on.label),
-                );
-                continue;
             }
             match rel(i, j) {
                 Some((0, n)) if n > 0 => {

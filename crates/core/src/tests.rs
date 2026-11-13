@@ -125,9 +125,8 @@ mod m6 {
         // divergiert
         let m = drift_messages(&[dl("A", "1", false, true), dl("B", "2", false, true)], &mut |_, _| Some((1, 2)), now);
         assert_eq!((m[0].level, m[0].text.as_str()), (Level::Error, "A und B divergiert"));
-        // offline
-        let m = drift_messages(&[dl("A", "1", false, true), dl("B", "2", false, false)], &mut |_, _| None, now);
-        assert!(m[0].text.contains("offline") && m[0].text.contains("3 Tagen"));
+        // offline / nicht erreichbar wird nicht bewertet
+        assert!(drift_messages(&[dl("A", "1", false, true), dl("B", "2", false, false)], &mut |_, _| None, now).is_empty());
         // Branches
         let mut b = dl("B", "2", false, true);
         b.branch = Some("dev".into());

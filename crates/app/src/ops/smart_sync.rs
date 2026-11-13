@@ -447,9 +447,12 @@ fn push_ticker_log(
         path: path_s,
         detail: detail_s,
     });
-    if let Some(ui) = weak.upgrade() {
+    let (w, s) = (weak.clone(), state.clone());
+    let _ = slint::invoke_from_event_loop(move || {
+        let Some(ui) = w.upgrade() else { return };
+        let mut st = s.lock().unwrap();
         apply(&ui, &mut st);
-    }
+    });
     id
 }
 
@@ -506,6 +509,7 @@ pub fn run_smart_sync(
         };
         let mut ok_count = 0usize;
         let mut warn_count = 0usize;
+        let mut synced_loc_ids = std::collections::HashSet::new();
 
         // Helper zum Synchronisieren eines Alternativpfads
         let sync_alt_target = |alt: &AltSyncTarget, step: i32, step_tot: i32, ok_cnt: &mut usize, warn_cnt: &mut usize| {
@@ -694,7 +698,27 @@ pub fn run_smart_sync(
                             format!("{path_str} · Commit erstellt – git push zu Remote…"),
                         );
                     }
-                    git.push(&target.path).map_err(|e| e.to_string())
+                    match git.push(&target.path) {
+                        Ok(out) => Ok(out),
+                        Err(push_err) => {
+                            let _ = git.fetch(&target.path);
+                            let post_fetch = git.snapshot(&target.loc_id, &target.path);
+                            if post_fetch.behind > 0 {
+                                update_ticker(
+                                    &weak,
+                                    &state_clone,
+                                    step_cur,
+                                    step_tot,
+                                    format!("⏳ [{step_cur}/{step_tot}] {kind_title}: {}", target.label),
+                                    format!("{path_str} · Remote voraus – git pull --rebase & push…"),
+                                );
+                                git.pull(&target.path, PullMode::Rebase).map_err(|e| e.to_string())?;
+                                git.push(&target.path).map_err(|e| e.to_string())
+                            } else {
+                                Err(push_err.to_string())
+                            }
+                        }
+                    }
                 })();
 
                 let res_ok = res.is_ok();
@@ -755,6 +779,7 @@ pub fn run_smart_sync(
                         step_cur += 1;
                         if res_ok {
                             sync_alt_target(alt, step_cur, step_tot, &mut ok_count, &mut warn_count);
+                            synced_loc_ids.insert(alt.loc_id.clone());
                         } else {
                             warn_count += 1;
                             push_ticker_log(
@@ -777,6 +802,7 @@ pub fn run_smart_sync(
             for alt in &plan.alt_standalone_targets {
                 step_cur += 1;
                 sync_alt_target(alt, step_cur, step_tot, &mut ok_count, &mut warn_count);
+                synced_loc_ids.insert(alt.loc_id.clone());
             }
         }
 
@@ -784,6 +810,9 @@ pub fn run_smart_sync(
         if do_pull {
             for target in &plan.pull_targets {
                 step_cur += 1;
+                if synced_loc_ids.contains(&target.loc_id) {
+                    continue;
+                }
                 let t0 = Instant::now();
                 let repo_with_branch = if target.branch.is_empty() {
                     target.label.clone()
@@ -877,17 +906,15 @@ pub fn run_smart_sync(
                         1,
                         "Vorhandenes Verzeichnis in repos.toml verknüpft",
                     );
-                    let (w, s, rid, tp) = (
-                        weak.clone(),
-                        state_clone.clone(),
-                        item.repo_id.clone(),
-                        item.target_path.clone(),
-                    );
+                    {
+                        let mut st = state_clone.lock().unwrap();
+                        link_location(&mut st.shared, os, &item.repo_id, &item.target_path, "");
+                        save_shared(&mut st);
+                    }
+                    let (w, s) = (weak.clone(), state_clone.clone());
                     let _ = slint::invoke_from_event_loop(move || {
                         let Some(ui) = w.upgrade() else { return };
                         let mut st = s.lock().unwrap();
-                        link_location(&mut st.shared, os, &rid, &tp, "");
-                        save_shared(&mut st);
                         apply(&ui, &mut st);
                     });
                     continue;
@@ -917,18 +944,15 @@ pub fn run_smart_sync(
                 if res_ok {
                     any_linked = true;
                     ok_count += 1;
+                    let mut st = state_clone.lock().unwrap();
+                    link_location(&mut st.shared, os, &item.repo_id, &item.target_path, "");
+                    save_shared(&mut st);
                 } else {
                     warn_count += 1;
                 }
                 let elapsed = t0.elapsed().as_secs_f32();
                 let src_str = item.source.clone();
-                let (w, s, rid, tp, r_val) = (
-                    weak.clone(),
-                    state_clone.clone(),
-                    item.repo_id.clone(),
-                    item.target_path.clone(),
-                    res,
-                );
+                let (w, s, r_val) = (weak.clone(), state_clone.clone(), res);
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(ui) = w.upgrade() else { return };
                     let mut st = s.lock().unwrap();
@@ -943,10 +967,6 @@ pub fn run_smart_sync(
                     if let Some(t) = st.smart_sync_log.iter_mut().find(|t| t.id == task_id) {
                         t.state = st_code;
                         t.detail = detail_msg;
-                    }
-                    if res_ok {
-                        link_location(&mut st.shared, os, &rid, &tp, "");
-                        save_shared(&mut st);
                     }
                     apply(&ui, &mut st);
                 });
