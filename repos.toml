@@ -140,6 +140,16 @@ linux = "/r/git/local-agent-studio"
 macos = "/r/git/local-agent-studio"
 
 [[location]]
+id = "local-agent-studio-1-2"
+repo_id = "local-agent-studio"
+label = "local-agent-studio"
+role = "backup"
+
+[location.paths]
+linux = "/home/tristan/Projekte/local-agent-studio"
+macos = "/home/tristan/Projekte/local-agent-studio"
+
+[[location]]
 id = "net-atlas-1"
 repo_id = "net-atlas"
 label = "net-atlas"
@@ -149,6 +159,16 @@ role = "primary"
 windows = 'R:\git\net-atlas'
 linux = "/r/git/net-atlas"
 macos = "/r/git/net-atlas"
+
+[[location]]
+id = "net-atlas-1-2"
+repo_id = "net-atlas"
+label = "net-atlas"
+role = "backup"
+
+[location.paths]
+linux = "/home/tristan/Projekte/net-atlas"
+macos = "/home/tristan/Projekte/net-atlas"
 
 [[location]]
 id = "networkdrivemanager-1"
