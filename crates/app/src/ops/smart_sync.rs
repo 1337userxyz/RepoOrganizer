@@ -985,12 +985,26 @@ pub fn run_smart_sync(
                         })
                         .collect()
                 };
-                for (rid, rp) in repo_org_paths {
-                    let s = git.snapshot(&rid, &rp);
+                let mut pushed_ids = std::collections::HashSet::new();
+                for (rid, rp) in &repo_org_paths {
+                    let s = git.snapshot(rid, rp);
                     if s.dirty_files + s.untracked > 0 {
-                        let _ = git.stage_all(&rp);
-                        let _ = git.commit(&rp, "Smart-Sync: Basispfade in repos.toml aktualisiert");
-                        let _ = git.push(&rp);
+                        let _ = git.stage_all(rp);
+                        let _ = git.commit(rp, "Smart-Sync: Basispfade in repos.toml aktualisiert");
+                        if git.push(rp).is_ok() {
+                            pushed_ids.insert(rid.clone());
+                        }
+                    }
+                }
+                if !pushed_ids.is_empty() && do_auto_sync {
+                    for (rid, rp) in &repo_org_paths {
+                        if pushed_ids.contains(rid) {
+                            continue;
+                        }
+                        let s = git.snapshot(rid, rp);
+                        if s.dirty_files + s.untracked == 0 && s.ahead == 0 {
+                            let _ = git.fetch(rp).and_then(|_| git.pull(rp, PullMode::FfOnly));
+                        }
                     }
                 }
             }
