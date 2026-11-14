@@ -498,6 +498,7 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
         ui.set_selected_notes(r.notes.as_str().into());
         ui.set_selected_favorite(r.favorite);
         ui.set_selected_clean_keep_binary(r.clean_keep_binary);
+        ui.set_selected_sync_base_paths(r.sync_base_paths);
 
         let is_offline = st.shared.locations_of(&r.id).all(|l| {
             match resolved(st, l) {
@@ -821,6 +822,7 @@ pub fn apply(ui: &MainWindow, st: &mut State) {
         ui.set_selected_notes("".into());
         ui.set_selected_favorite(false);
         ui.set_selected_clean_keep_binary(false);
+        ui.set_selected_sync_base_paths(false);
         ui.set_selected_is_offline(false);
         ui.set_selected_suggested_dest("".into());
         ui.set_selected_dirty_files(ModelRc::default());
@@ -869,10 +871,6 @@ pub fn sync_settings_fields(cfgw: &SettingsWindow, st: &State) {
     cfgw.set_cfg_shared_unix(bp.shared_unix.clone().unwrap_or_default().into());
     cfgw.set_cfg_local_linux(bp.local_linux.clone().unwrap_or_default().into());
     cfgw.set_cfg_local_win(bp.local_windows.clone().unwrap_or_default().into());
-    cfgw.set_cfg_sync_shared_win(bp.sync_shared_windows);
-    cfgw.set_cfg_sync_shared_unix(bp.sync_shared_unix);
-    cfgw.set_cfg_sync_local_linux(bp.sync_local_linux);
-    cfgw.set_cfg_sync_local_win(bp.sync_local_windows);
     crate::controllers::settings::sync_token_fields(cfgw, st);
 }
 

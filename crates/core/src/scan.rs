@@ -185,6 +185,7 @@ pub fn adopt(cfg: &mut SharedConfig, os: Os, items: &[Adopt]) -> usize {
                             notes: String::new(),
                             favorite: false,
                             clean_keep_binary: false,
+                            sync_base_paths: false,
                         });
                         if let Some(k) = key {
                             batch.insert(k, id.clone());
@@ -227,7 +228,7 @@ mod tests {
 
     fn cfg() -> SharedConfig {
         let mut c = SharedConfig::default();
-        c.repos.push(Repo { id: "bar".into(), name: "Bar".into(), remote_url: "https://github.com/foo/bar.git".into(), tags: vec![], notes: String::new(), favorite: false, clean_keep_binary: false });
+        c.repos.push(Repo { id: "bar".into(), name: "Bar".into(), remote_url: "https://github.com/foo/bar.git".into(), tags: vec![], notes: String::new(), favorite: false, clean_keep_binary: false, sync_base_paths: false });
         let mut paths = OsPaths::default();
         set_path(&mut paths, Os::current(), "/x/bar".into());
         c.locations.push(Location { id: "bar-1".into(), repo_id: "bar".into(), label: String::new(), paths, role: Role::Primary, auto_fetch: false });

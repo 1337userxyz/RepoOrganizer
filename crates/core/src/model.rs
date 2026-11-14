@@ -16,6 +16,8 @@ pub struct Repo {
     pub favorite: bool,
     #[serde(default, skip_serializing_if = "is_false")]
     pub clean_keep_binary: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub sync_base_paths: bool,
 }
 
 fn is_false(b: &bool) -> bool {

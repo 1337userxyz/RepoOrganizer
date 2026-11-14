@@ -174,12 +174,6 @@ pub fn register(ui: &MainWindow, state: &Shared, settings_win: &SettingsWindow) 
                 st.shared.base_paths.local_linux = if ll.is_empty() { None } else { Some(ll.to_string()) };
                 let lw = local_win.trim();
                 st.shared.base_paths.local_windows = if lw.is_empty() { None } else { Some(lw.to_string()) };
-                if let Some(w) = cfgw.upgrade() {
-                    st.shared.base_paths.sync_shared_windows = w.get_cfg_sync_shared_win();
-                    st.shared.base_paths.sync_shared_unix = w.get_cfg_sync_shared_unix();
-                    st.shared.base_paths.sync_local_linux = w.get_cfg_sync_local_linux();
-                    st.shared.base_paths.sync_local_windows = w.get_cfg_sync_local_win();
-                }
 
                 save_local(&mut st);
                 save_shared(&mut st);

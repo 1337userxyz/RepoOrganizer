@@ -238,25 +238,22 @@ pub fn plan_smart_sync(st: &State) -> SmartSyncPlan {
 
     let bp = &st.shared.base_paths;
     let os = st.os;
-    let candidates: Vec<(bool, Option<&str>)> = match os {
-        Os::Windows => vec![
-            (bp.sync_shared_windows, bp.shared_windows.as_deref()),
-            (bp.sync_local_windows, bp.local_windows.as_deref()),
-        ],
-        Os::Linux => vec![
-            (bp.sync_shared_unix, bp.shared_unix.as_deref()),
-            (bp.sync_local_linux, bp.local_linux.as_deref()),
-        ],
-        Os::MacOs => vec![(bp.sync_shared_unix, bp.shared_unix.as_deref())],
+    let candidates: Vec<Option<&str>> = match os {
+        Os::Windows => vec![bp.shared_windows.as_deref(), bp.local_windows.as_deref()],
+        Os::Linux => vec![bp.shared_unix.as_deref(), bp.local_linux.as_deref()],
+        Os::MacOs => vec![bp.shared_unix.as_deref()],
     };
     let active_bps: Vec<&str> = candidates
         .into_iter()
-        .filter_map(|(enabled, path)| if enabled { path } else { None })
+        .flatten()
         .map(str::trim)
         .filter(|t| !t.is_empty() && base_path_available(Path::new(t)))
         .collect();
 
     for r in &st.shared.repos {
+        if !r.sync_base_paths {
+            continue;
+        }
         let clone_source = if !r.remote_url.trim().is_empty() {
             Some(r.remote_url.trim().to_string())
         } else {

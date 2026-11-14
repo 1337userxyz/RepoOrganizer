@@ -30,10 +30,6 @@ pub struct SavedView {
     pub older_than_days: Option<u32>,
 }
 
-fn is_false(b: &bool) -> bool {
-    !*b
-}
-
 /// Konfigurierbare Standard-Basispfade (geteilt oder je Betriebssystem).
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct BasePaths {
@@ -45,26 +41,11 @@ pub struct BasePaths {
     pub local_linux: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local_windows: Option<String>,
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub sync_shared_windows: bool,
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub sync_shared_unix: bool,
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub sync_local_linux: bool,
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub sync_local_windows: bool,
 }
 
 impl BasePaths {
     pub fn is_empty(&self) -> bool {
-        self.shared_windows.is_none()
-            && self.shared_unix.is_none()
-            && self.local_linux.is_none()
-            && self.local_windows.is_none()
-            && !self.sync_shared_windows
-            && !self.sync_shared_unix
-            && !self.sync_local_linux
-            && !self.sync_local_windows
+        self.shared_windows.is_none() && self.shared_unix.is_none() && self.local_linux.is_none() && self.local_windows.is_none()
     }
 }
 

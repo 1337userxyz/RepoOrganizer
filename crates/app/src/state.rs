@@ -264,6 +264,7 @@ pub fn add_repo(st: &mut State, name: &str, path: &str, remote_url: &str) -> Str
         notes: String::new(),
         favorite: false,
         clean_keep_binary: false,
+        sync_base_paths: false,
     });
     st.shared.locations.push(Location {
         id: format!("{id}-1"),

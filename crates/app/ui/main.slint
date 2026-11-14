@@ -329,10 +329,6 @@ export component SettingsWindow inherits Window {
     in-out property <string> cfg-shared-unix;
     in-out property <string> cfg-local-linux;
     in-out property <string> cfg-local-win;
-    in-out property <bool> cfg-sync-shared-win;
-    in-out property <bool> cfg-sync-shared-unix;
-    in-out property <bool> cfg-sync-local-linux;
-    in-out property <bool> cfg-sync-local-win;
     in-out property <string> cfg-token-user;
     in-out property <string> cfg-token-input;
     in-out property <string> cfg-token-expires;
@@ -478,7 +474,7 @@ export component SettingsWindow inherits Window {
                             spacing: 10px;
                             Text { text: "Standard-Basispfade (repos.toml)"; font-weight: 700; font-size: 14px; color: AppTheme.accent; }
                             Text {
-                                text: "Nur Basispfade mit aktivem „Smart-Sync“-Haken werden beim Smart-Sync automatisch mit fehlenden Repos befüllt.";
+                                text: "Welche Repos beim Smart-Sync automatisch in fehlende Basispfade geklont werden, legst du direkt pro Repo im Meta-Tab fest.";
                                 font-size: 11px;
                                 color: AppTheme.text-muted;
                                 wrap: word-wrap;
@@ -488,28 +484,24 @@ export component SettingsWindow inherits Window {
                                 Text { text: "Geteilt Unix:"; width: 130px; vertical-alignment: center; color: AppTheme.text-secondary; }
                                 LineEdit { text <=> root.cfg-shared-unix; placeholder-text: "/r/git"; horizontal-stretch: 1; }
                                 Button { text: "Wählen…"; clicked => { root.browse-base-path("shared_unix"); } }
-                                CheckBox { text: "Smart-Sync"; checked <=> root.cfg-sync-shared-unix; }
                             }
                             HorizontalLayout {
                                 spacing: 8px;
                                 Text { text: "Geteilt Windows:"; width: 130px; vertical-alignment: center; color: AppTheme.text-secondary; }
                                 LineEdit { text <=> root.cfg-shared-win; placeholder-text: "R:\\git"; horizontal-stretch: 1; }
                                 Button { text: "Wählen…"; clicked => { root.browse-base-path("shared_win"); } }
-                                CheckBox { text: "Smart-Sync"; checked <=> root.cfg-sync-shared-win; }
                             }
                             HorizontalLayout {
                                 spacing: 8px;
                                 Text { text: "Lokal Linux:"; width: 130px; vertical-alignment: center; color: AppTheme.text-secondary; }
                                 LineEdit { text <=> root.cfg-local-linux; placeholder-text: "/home/.../Projekte"; horizontal-stretch: 1; }
                                 Button { text: "Wählen…"; clicked => { root.browse-base-path("local_linux"); } }
-                                CheckBox { text: "Smart-Sync"; checked <=> root.cfg-sync-local-linux; }
                             }
                             HorizontalLayout {
                                 spacing: 8px;
                                 Text { text: "Lokal Windows:"; width: 130px; vertical-alignment: center; color: AppTheme.text-secondary; }
                                 LineEdit { text <=> root.cfg-local-win; placeholder-text: "C:\\Projekte"; horizontal-stretch: 1; }
                                 Button { text: "Wählen…"; clicked => { root.browse-base-path("local_win"); } }
-                                CheckBox { text: "Smart-Sync"; checked <=> root.cfg-sync-local-win; }
                             }
                         }
                     }
@@ -1430,6 +1422,8 @@ export component MainWindow inherits Window {
 
     in-out property <bool> selected-clean-keep-binary: false;
     callback toggle-repo-clean-keep-binary(string, bool);
+    in-out property <bool> selected-sync-base-paths: false;
+    callback toggle-repo-sync-base-paths(string, bool);
 
     callback refresh();
     callback select(string);
@@ -2738,6 +2732,16 @@ export component MainWindow inherits Window {
                                             text: "Binary bei Clean behalten (vorerst nur Rust)";
                                             checked <=> root.selected-clean-keep-binary;
                                             toggled => { root.toggle-repo-clean-keep-binary(root.selected-id, root.selected-clean-keep-binary); }
+                                        }
+                                    }
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        height: 26px;
+                                        Text { text: ""; width: 84px; }
+                                        CheckBox {
+                                            text: "Fehlende Basispfade bei Smart-Sync klonen";
+                                            checked <=> root.selected-sync-base-paths;
+                                            toggled => { root.toggle-repo-sync-base-paths(root.selected-id, root.selected-sync-base-paths); }
                                         }
                                     }
                                     HorizontalLayout {

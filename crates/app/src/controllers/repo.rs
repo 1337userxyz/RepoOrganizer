@@ -188,6 +188,19 @@ pub fn register(ui: &MainWindow, state: &Shared) {
     }
     {
         let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_toggle_repo_sync_base_paths(move |repo: SharedString, enabled: bool| {
+            if let Some(ui) = weak.upgrade() {
+                let mut st = state.lock().unwrap();
+                if let Some(r) = st.shared.repos.iter_mut().find(|r| r.id == repo.as_str()) {
+                    r.sync_base_paths = enabled;
+                }
+                save_shared(&mut st);
+                apply(&ui, &mut st);
+            }
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
         ui.on_delete_repo(move |repo: SharedString| {
             if let Some(ui) = weak.upgrade() {
                 let mut st = state.lock().unwrap();
