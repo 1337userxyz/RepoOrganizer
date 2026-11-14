@@ -331,6 +331,13 @@ export component SettingsWindow inherits Window {
     in-out property <bool> cfg-sync-shared-unix;
     in-out property <bool> cfg-sync-local-linux;
     in-out property <bool> cfg-sync-local-win;
+    in-out property <string> cfg-token-user;
+    in-out property <string> cfg-token-input;
+    in-out property <string> cfg-token-expires;
+    in property <string> cfg-token-masked;
+    in property <string> cfg-token-expiry-info;
+    in property <int> cfg-token-expiry-level;
+    in property <string> cfg-token-feedback;
     in property <[MappingRow]> cfg-mappings;
     in property <[CheckRow]> cfg-checks;
 
@@ -340,6 +347,8 @@ export component SettingsWindow inherits Window {
     callback add-mapping(string, string);
     callback remove-mapping(int);
     callback toggle-health-check(string);
+    callback save-github-token(string, string, string);
+    callback remove-github-token();
     callback close-window();
 
     VerticalLayout {
@@ -457,12 +466,79 @@ export component SettingsWindow inherits Window {
                     }
                     VerticalLayout {
                         spacing: 6px;
-                        width: 320px;
+                        width: 340px;
                         Text { text: "Aktive Health-Checks"; font-weight: 700; font-size: 14px; }
                         for chk in root.cfg-checks: CheckBox {
                             text: chk.label;
                             checked: chk.enabled;
                             toggled => { root.toggle-health-check(chk.id); }
+                        }
+
+                        Rectangle { height: 1px; background: AppTheme.border; }
+                        Text { text: "GitHub-Token (lokal)"; font-weight: 700; font-size: 14px; }
+                        Rectangle {
+                            background: AppTheme.bg-subtle;
+                            border-width: 1px;
+                            border-color: AppTheme.border;
+                            border-radius: AppTheme.radius-md;
+                            VerticalLayout {
+                                padding: 10px;
+                                spacing: 6px;
+                                Text {
+                                    text: "Gespeichert: " + root.cfg-token-masked;
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    wrap: word-wrap;
+                                }
+                                Text {
+                                    text: root.cfg-token-expiry-info;
+                                    font-size: 12px;
+                                    color: root.cfg-token-expiry-level == 3 ? AppTheme.danger : (root.cfg-token-expiry-level == 2 ? AppTheme.warning : (root.cfg-token-expiry-level == 1 ? AppTheme.success : AppTheme.text-muted));
+                                    wrap: word-wrap;
+                                }
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    Text { text: "User:"; width: 82px; vertical-alignment: center; font-size: 12px; }
+                                    LineEdit { text <=> root.cfg-token-user; placeholder-text: "GitHub-Username"; horizontal-stretch: 1; }
+                                }
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    Text { text: "Token:"; width: 82px; vertical-alignment: center; font-size: 12px; }
+                                    LineEdit {
+                                        text <=> root.cfg-token-input;
+                                        input-type: password;
+                                        placeholder-text: "ghp_… (leer = nur Datum)";
+                                        horizontal-stretch: 1;
+                                    }
+                                }
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    Text { text: "Läuft ab:"; width: 82px; vertical-alignment: center; font-size: 12px; }
+                                    LineEdit {
+                                        text <=> root.cfg-token-expires;
+                                        placeholder-text: "YYYY-MM-DD (optional)";
+                                        horizontal-stretch: 1;
+                                    }
+                                }
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    Button {
+                                        text: "Token speichern";
+                                        primary: true;
+                                        clicked => { root.save-github-token(root.cfg-token-user, root.cfg-token-input, root.cfg-token-expires); }
+                                    }
+                                    Button {
+                                        text: "Entfernen";
+                                        clicked => { root.remove-github-token(); }
+                                    }
+                                }
+                                if root.cfg-token-feedback != "": Text {
+                                    text: root.cfg-token-feedback;
+                                    font-size: 11px;
+                                    color: AppTheme.text-muted;
+                                    wrap: word-wrap;
+                                }
+                            }
                         }
                     }
                 }

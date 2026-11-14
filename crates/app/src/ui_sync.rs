@@ -873,6 +873,7 @@ pub fn sync_settings_fields(cfgw: &SettingsWindow, st: &State) {
     cfgw.set_cfg_sync_shared_unix(bp.sync_shared_unix);
     cfgw.set_cfg_sync_local_linux(bp.sync_local_linux);
     cfgw.set_cfg_sync_local_win(bp.sync_local_windows);
+    crate::controllers::settings::sync_token_fields(cfgw, st);
 }
 
 pub fn init_smart_sync_options(ssw: &SmartSyncWindow, st: &State) {

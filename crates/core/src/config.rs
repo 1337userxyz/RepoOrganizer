@@ -163,6 +163,8 @@ pub struct LocalConfig {
     pub shared_config: Option<PathBuf>,
     pub health: crate::health::HealthSettings,
     pub stale_days: u32,
+    /// Optionales Ablaufdatum (YYYY-MM-DD) für das lokal gespeicherte GitHub-Token.
+    pub token_expires_at: Option<String>,
 }
 
 impl Default for LocalConfig {
@@ -178,6 +180,7 @@ impl Default for LocalConfig {
             shared_config: None,
             health: crate::health::HealthSettings::default(),
             stale_days: 30,
+            token_expires_at: None,
         }
     }
 }
