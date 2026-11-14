@@ -1,6 +1,6 @@
 //! Pfad-Auflösung je Betriebssystem inkl. optionaler Mappings und automatischer Pfad-Erkennung.
 use crate::model::Location;
-pub use kit_paths::{auto_map_from, folder_or_parent, map_from, norm, Os, PathMapping};
+pub use kit_fs::{auto_map_from, folder_or_parent, map_from, norm, Os, PathMapping};
 use std::path::{PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -166,7 +166,7 @@ impl Default for LocalConfig {
 impl LocalConfig {
     /// `local.toml` im OS-Config-Verzeichnis (Bootstrap).
     pub fn default_path() -> Option<PathBuf> {
-        kit_paths::appdirs::config_dir("RepoOrganizer").map(|d| d.join("local.toml"))
+        kit_fs::appdirs::config_dir("RepoOrganizer").map(|d| d.join("local.toml"))
     }
 
     /// Fehlt die Datei, werden Defaults geliefert.
@@ -232,12 +232,6 @@ fn read(path: &Path) -> Result<String, ConfigError> {
 
 /// Atomar schreiben: Temp-Datei + Rename.
 pub fn write_atomic(path: &Path, content: &str) -> Result<(), ConfigError> {
-    let io = |source| ConfigError::Io { path: path.into(), source };
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(io)?;
-    }
-    let tmp = path.with_extension("toml.tmp");
-    std::fs::write(&tmp, content).map_err(io)?;
-    std::fs::rename(&tmp, path).map_err(io)
+    kit_fs::write_atomic(path, content.as_bytes()).map_err(|source| ConfigError::Io { path: path.into(), source })
 }
 

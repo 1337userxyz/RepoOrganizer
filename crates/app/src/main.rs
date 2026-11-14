@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod controllers;
 mod ops;
 mod present;
@@ -24,7 +26,7 @@ slint::include_modules!();
 
 fn main() -> Result<(), slint::PlatformError> {
     let _ = kit_logging::init_logger(Some(PathBuf::from("repoorganizer.log")), 1000, log::LevelFilter::Info);
-    kit_picker::ensure_dialog_ready();
+    kit_dialog::ensure_dialog_ready();
 
     if std::env::args().nth(1).as_deref() == Some("status") {
         let lp = LocalConfig::default_path().unwrap_or_else(|| PathBuf::from("local.toml"));

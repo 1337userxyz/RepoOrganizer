@@ -56,6 +56,11 @@ remote_url = "https://github.com/1337userxyz/RepoOrganizer.git"
 clean_keep_binary = true
 
 [[repo]]
+id = "rust-kit"
+name = "rust-kit"
+remote_url = "https://github.com/1337userxyz/rust-kit.git"
+
+[[repo]]
 id = "slint-desktop-kit"
 name = "slint-desktop-kit"
 remote_url = "https://github.com/1337userxyz/slint-desktop-kit.git"
@@ -246,6 +251,27 @@ role = "backup"
 
 [location.paths]
 linux = "/home/tristan/Projekte/RepoOrganizer"
+
+[[location]]
+id = "rust-kit-1"
+repo_id = "rust-kit"
+label = "rust-kit"
+role = "primary"
+
+[location.paths]
+windows = 'R:\git\rust-kit'
+linux = "/r/git/rust-kit"
+macos = "/r/git/rust-kit"
+
+[[location]]
+id = "rust-kit-1-2"
+repo_id = "rust-kit"
+label = "rust-kit"
+role = "backup"
+
+[location.paths]
+linux = "/home/tristan/Projekte/rust-kit"
+macos = "/home/tristan/Projekte/rust-kit"
 
 [[location]]
 id = "slint-desktop-kit-1"

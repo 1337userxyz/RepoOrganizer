@@ -1,4 +1,5 @@
-use kit_picker::PickRequest;
+use kit_dialog::PickRequest;
+use kit_slint::PickRequestSlintExt;
 use repoorganizer_core::paths::Resolved;
 use repoorganizer_core::scan::link_location;
 use slint::{ComponentHandle, SharedString};

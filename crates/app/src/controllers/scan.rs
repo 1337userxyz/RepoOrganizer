@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 
-use kit_picker::PickRequest;
+use kit_dialog::PickRequest;
+use kit_slint::PickRequestSlintExt;
 use repoorganizer_core::scan::{adopt, Adopt, ScanClass};
 use slint::{ComponentHandle, SharedString};
 

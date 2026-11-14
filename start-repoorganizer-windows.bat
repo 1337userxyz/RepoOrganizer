@@ -1,98 +1,107 @@
 @echo off
-setlocal
-cd /d "%~dp0"
+setlocal enabledelayedexpansion
 
-:: ==============================================================================
-:: PROJEKT: RepoOrganizer
-:: DATEI:   start-repoorganizer-windows.bat
-:: ZWECK:   Automatischer Build und Start der Desktop-Anwendung unter Windows
-:: ==============================================================================
-
+REM === Konfiguration (pro App anpassen) ===
 set "APP_NAME=RepoOrganizer"
-set "BIN_NAME=repoorganizer"
-set "BUILD_PROFILE=debug"
-title %APP_NAME%
+set "BIN_NAME=repoorganizer.exe"
+set "DEFAULT_PROFILE=release"
+set "NEED_RUST_KIT=1"
+set "NEED_SLINT_KIT=1"
 
-echo [%APP_NAME%] Initialisiere Umgebung...
+set "SCRIPT_DIR=%~dp0"
+if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
+for %%I in ("%SCRIPT_DIR%\..") do set "PARENT_DIR=%%~fI"
 
-:: 1. Cargo & Rust Toolchain auf R:\ und System sicherstellen
-if not defined RUSTUP_LOG set "RUSTUP_LOG=error"
-where cargo >nul 2>&1
-if errorlevel 1 (
-    if defined CARGO_HOME (
-        if exist "%CARGO_HOME%\bin\cargo.exe" set "PATH=%CARGO_HOME%\bin;%PATH%"
-    )
-    if exist "R:\.cargo\bin\cargo.exe" (
-        set "PATH=R:\.cargo\bin;%PATH%"
-    ) else if exist "%USERPROFILE%\.cargo\bin\cargo.exe" (
-        set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
-    )
-)
+REM === CLI-Argumente parsen ===
+set "DO_CLEAN=0"
+set "PROFILE=%DEFAULT_PROFILE%"
+set "APP_ARGS="
 
-:: 2. ImDisk/RAM-Disk Junction fuer Cargo Registry absichern
-if exist "R:\.cargo" (
-    if not exist "%USERPROFILE%\.cargo\registry" mkdir "%USERPROFILE%\.cargo\registry" 2>nul
-    fsutil reparsepoint query "R:\.cargo\registry" >nul 2>&1
-    if errorlevel 1 (
-        if exist "R:\.cargo\registry" rmdir /s /q "R:\.cargo\registry" 2>nul
-        mklink /J "R:\.cargo\registry" "%USERPROFILE%\.cargo\registry" >nul 2>&1
-    )
-)
-
-:: 3. Lokale Pfad-Abhaengigkeiten absichern (slint-desktop-kit)
-if not exist "..\slint-desktop-kit\Cargo.toml" (
-    if exist "%USERPROFILE%\Projekte\slint-desktop-kit\Cargo.toml" (
-        mklink /J "..\slint-desktop-kit" "%USERPROFILE%\Projekte\slint-desktop-kit" >nul 2>&1
-    ) else if exist "%USERPROFILE%\git\slint-desktop-kit\Cargo.toml" (
-        mklink /J "..\slint-desktop-kit" "%USERPROFILE%\git\slint-desktop-kit" >nul 2>&1
-    ) else (
-        echo [%APP_NAME%] Klone fehlende Abhaengigkeit slint-desktop-kit...
-        git clone https://github.com/1337userxyz/slint-desktop-kit.git "..\slint-desktop-kit" >nul 2>&1
-    )
-)
-
-:: 4. Build-Bereinigung vor dem Kompilieren (schont RAM-Disk R:\)
-if "%BUILD_PROFILE%"=="release" (
-    if exist "target\debug" (
-        echo [%APP_NAME%] Bereinige ungenutzte Debug-Builddaten [target\debug]...
-        rmdir /s /q "target\debug" 2>nul
-    )
-    if exist "target\release\deps\%BIN_NAME%-*.pdb" (
-        del /f /q "target\release\deps\%BIN_NAME%-*.pdb" 2>nul
-    )
-    set "CARGO_BUILD_FLAG=--release"
-    set "TARGET_EXE=%~dp0target\release\%BIN_NAME%.exe"
-) else (
-    if exist "target\release" (
-        echo [%APP_NAME%] Bereinige ungenutzte Release-Builddaten [target\release]...
-        rmdir /s /q "target\release" 2>nul
-    )
-    if exist "target\debug\deps\%BIN_NAME%-*.pdb" (
-        del /f /q "target\debug\deps\%BIN_NAME%-*.pdb" 2>nul
-    )
-    set "CARGO_BUILD_FLAG="
-    set "TARGET_EXE=%~dp0target\debug\%BIN_NAME%.exe"
-)
-
-:: Manueller Schalter --clean: Vollstaendige Neu-Kompilierung erzwingen
-if /i "%~1"=="--clean" (
-    echo [%APP_NAME%] Schalter --clean erkannt: Bereinige target vollstaendig...
-    cargo clean
+:parse_args
+if "%~1"=="" goto args_done
+if /I "%~1"=="--clean" (
+    set "DO_CLEAN=1"
     shift
+    goto parse_args
+)
+if /I "%~1"=="--release" (
+    set "PROFILE=release"
+    shift
+    goto parse_args
+)
+if /I "%~1"=="--debug" (
+    set "PROFILE=debug"
+    shift
+    goto parse_args
+)
+set "APP_ARGS=!APP_ARGS! %1"
+shift
+goto parse_args
+:args_done
+
+REM === Symlink/Junction-Self-Healing ===
+if "%NEED_RUST_KIT%"=="1" (
+    if not exist "%PARENT_DIR%\rust-kit\Cargo.toml" (
+        if exist "C:\Users\%USERNAME%\Projekte\rust-kit\Cargo.toml" (
+            mklink /J "%PARENT_DIR%\rust-kit" "C:\Users\%USERNAME%\Projekte\rust-kit" >nul 2>&1
+        ) else if exist "R:\git\rust-kit\Cargo.toml" (
+            mklink /J "%PARENT_DIR%\rust-kit" "R:\git\rust-kit" >nul 2>&1
+        )
+    )
+)
+if "%NEED_SLINT_KIT%"=="1" (
+    if not exist "%PARENT_DIR%\slint-desktop-kit\Cargo.toml" (
+        if exist "C:\Users\%USERNAME%\Projekte\slint-desktop-kit\Cargo.toml" (
+            mklink /J "%PARENT_DIR%\slint-desktop-kit" "C:\Users\%USERNAME%\Projekte\slint-desktop-kit" >nul 2>&1
+        ) else if exist "R:\git\slint-desktop-kit\Cargo.toml" (
+            mklink /J "%PARENT_DIR%\slint-desktop-kit" "R:\git\slint-desktop-kit" >nul 2>&1
+        )
+    )
 )
 
-:: 5. Kompilierung
-echo [%APP_NAME%] Pruefe / Baue %BUILD_PROFILE%...
-cargo build %CARGO_BUILD_FLAG% -p %BIN_NAME%
-if errorlevel 1 (
-    echo.
-    echo [%APP_NAME%] [FEHLER] Fehler beim Kompilieren von %APP_NAME%!
-    echo Falls der Fehler "linker link.exe not found" lautet, starte bitte:
-    echo   R:\git\pwsh7-scripts\Setup\DevWorkstation\Apps\VisualStudioBuildTools\Install-VisualStudioBuildTools.bat
-    pause
+pushd "%SCRIPT_DIR%" >nul
+
+if "%DO_CLEAN%"=="1" (
+    echo [Kit] Fuehre cargo clean aus...
+    cargo clean
+)
+
+if /I "%PROFILE%"=="release" (
+    cargo build --release -p repoorganizer
+    if errorlevel 1 goto build_error
+    set "TARGET_SUB=release"
+    set "OTHER_SUB=debug"
+) else (
+    cargo build -p repoorganizer
+    if errorlevel 1 goto build_error
+    set "TARGET_SUB=debug"
+    set "OTHER_SUB=release"
+)
+
+REM === RAM-Disk-Schonung (nur eigenes target/) ===
+if exist "%SCRIPT_DIR%\target\%OTHER_SUB%" (
+    rmdir /s /q "%SCRIPT_DIR%\target\%OTHER_SUB%" >nul 2>&1
+)
+del /s /q "%SCRIPT_DIR%\target\%TARGET_SUB%\*.pdb" >nul 2>&1
+
+set "EXE_PATH=%SCRIPT_DIR%\target\%TARGET_SUB%\%BIN_NAME%"
+if not exist "%EXE_PATH%" (
+    if defined CARGO_TARGET_DIR (
+        set "EXE_PATH=%CARGO_TARGET_DIR%\%TARGET_SUB%\%BIN_NAME%"
+    )
+)
+
+if not exist "%EXE_PATH%" (
+    echo [Fehler] Binary nicht gefunden: %EXE_PATH%
+    popd >nul
     exit /b 1
 )
 
-:: 6. Fertiges Programm starten
-echo [%APP_NAME%] Starte %APP_NAME% GUI...
-start "" "%TARGET_EXE%" %*
+start "" "%EXE_PATH%" %APP_ARGS%
+popd >nul
+exit /b 0
+
+:build_error
+echo [Fehler] Build fehlgeschlagen.
+popd >nul
+exit /b 1

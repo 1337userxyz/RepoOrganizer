@@ -8,6 +8,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout rust-kit
+        run: git clone https://github.com/1337userxyz/rust-kit.git ../rust-kit
       - name: Checkout slint-desktop-kit
         run: git clone https://github.com/1337userxyz/slint-desktop-kit.git ../slint-desktop-kit
       - uses: dtolnay/rust-toolchain@stable

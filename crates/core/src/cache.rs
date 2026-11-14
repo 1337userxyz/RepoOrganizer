@@ -4,7 +4,7 @@ use crate::model::{Snapshot, Status};
 use std::path::{Path, PathBuf};
 
 pub fn default_path() -> Option<PathBuf> {
-    kit_paths::appdirs::cache_dir("RepoOrganizer").map(|d| d.join("snapshots.json"))
+    kit_fs::appdirs::cache_dir("RepoOrganizer").map(|d| d.join("snapshots.json"))
 }
 
 /// Fehlende oder defekte Datei → leerer Cache.
@@ -42,7 +42,7 @@ pub struct RepoStats {
 }
 
 pub fn activity_path() -> Option<PathBuf> {
-    kit_paths::appdirs::cache_dir("RepoOrganizer").map(|d| d.join("activity.json"))
+    kit_fs::appdirs::cache_dir("RepoOrganizer").map(|d| d.join("activity.json"))
 }
 
 pub fn load_activity(path: &Path) -> std::collections::HashMap<String, RepoStats> {

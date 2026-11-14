@@ -1,5 +1,5 @@
 import { Button, CheckBox, ComboBox, LineEdit, ListView, ScrollView } from "std-widgets.slint";
-import { AppTheme, KitThemeSelector } from "@kit-theme";
+import { AppTheme, KitThemeSelector, KitBadge, KitColSep, KitColResizer, KitHoverCard } from "@kit-theme";
 export { AppTheme }
 
 export struct MappingRow {
@@ -163,91 +163,6 @@ global Kinds {
     }
 }
 
-component Badge inherits Rectangle {
-    in property <string> text;
-    in property <int> kind;
-    background: Kinds.kind-color(kind).with-alpha(0.18);
-    border-radius: 10px;
-    border-color: Kinds.kind-color(kind);
-    border-width: 1px;
-    min-width: label.preferred-width + 14px;
-    height: 20px;
-    label := Text {
-        text: root.text;
-        font-size: 11px;
-        font-weight: 600;
-        color: Kinds.kind-color(root.kind);
-        horizontal-alignment: center;
-        vertical-alignment: center;
-    }
-}
-
-component ColSep inherits Rectangle {
-    width: 6px;
-    Rectangle {
-        x: (parent.width - 1px) / 2;
-        width: 1px;
-        height: parent.height;
-        background: AppTheme.border;
-    }
-}
-
-component ColResizer inherits Rectangle {
-    in-out property <length> target-width;
-    in property <length> col-min-w: 30px;
-    in property <length> col-max-w: 800px;
-    width: 6px;
-    clip: false;
-
-    Rectangle {
-        x: (parent.width - 1px) / 2;
-        width: 1px;
-        height: parent.height;
-        background: mta.has-hover || mta.pressed ? AppTheme.accent : AppTheme.border-strong;
-    }
-
-    mta := TouchArea {
-        width: 10px;
-        x: (parent.width - self.width) / 2;
-        mouse-cursor: ew-resize;
-
-        moved => {
-            if (self.pressed) {
-                target-width = max(root.col-min-w, min(root.col-max-w, target-width + (self.mouse-x - self.pressed-x)));
-            }
-        }
-    }
-}
-
-component HoverCard inherits Rectangle {
-    in property <int> row-index: 0;
-    in property <length> card-x: 0px;
-    in property <length> card-width: 360px;
-    in property <length> card-height: 100px;
-
-    x: root.card-x;
-    // Öffnet nach unten bis Zeile 4 (damit nach oben nie abgeschnitten wird),
-    // ab Zeile 5 nach oben über die Zeile.
-    y: root.row-index < 5 ? 36px : -root.card-height - 4px;
-    width: root.card-width;
-    height: root.card-height;
-    z: 1000;
-    background: AppTheme.bg-surface;
-    border-width: 1.5px;
-    border-color: AppTheme.accent;
-    border-radius: AppTheme.radius-md;
-    drop-shadow-blur: 8px;
-    drop-shadow-color: AppTheme.bg-scrim;
-    drop-shadow-offset-y: 2px;
-    clip: true;
-
-    VerticalLayout {
-        padding: 8px;
-        spacing: 4px;
-        @children
-    }
-}
-
 component BarChart inherits Rectangle {
     in property <[BarItem]> items;
     in property <color> bar-color: AppTheme.accent;
@@ -377,7 +292,7 @@ export component ScanWindow inherits Window {
                             Text { text: row.path; font-weight: 600; overflow: elide; }
                             Text { text: row.remote == "" ? "(kein origin)" : row.remote; font-size: 11px; opacity: 0.65; overflow: elide; }
                         }
-                        Badge { text: row.kind-text; kind: row.kind; y: (parent.height - self.height) / 2; }
+                        KitBadge { text: row.kind-text; kind: row.kind; y: (parent.height - self.height) / 2; }
                     }
                 }
             }
@@ -615,7 +530,7 @@ component SmartSyncDetailItem inherits Rectangle {
 
             HorizontalLayout {
                 alignment: center;
-                Badge {
+                KitBadge {
                     text: root.item.info;
                     kind: root.item.kind;
                 }
@@ -1086,7 +1001,7 @@ export component SmartSyncWindow inherits Window {
                                 border-radius: 3px;
                             }
                         }
-                        Badge {
+                        KitBadge {
                             text: root.sync-step-current + "/" + root.sync-step-total;
                             kind: root.sync-running ? 1 : 0;
                         }
@@ -1645,40 +1560,40 @@ export component MainWindow inherits Window {
                                         current-index <=> root.col-repo-filter;
                                         selected => { root.column-filter-changed(); }
                                     }
-                                    ColResizer { target-width <=> root.col-w-repo; col-min-w: 80px; col-max-w: 450px; }
+                                    KitColResizer { target-width <=> root.col-w-repo; col-min-w: 80px; col-max-w: 450px; }
                                     ComboBox {
                                         width: root.col-w-status;
                                         model: ["Status: Alle", "✓ Synchron", "↑ Zu senden (Push)", "↓ Zu holen (Pull)", "✎ Geändert (Lokal)", "📦 Mit Stash", "⇄ Divergiert", "💻 Nur lokal", "⭘ Offline", "⚠ Fehler"];
                                         current-index <=> root.col-status-filter;
                                         selected => { root.column-filter-changed(); }
                                     }
-                                    ColResizer { target-width <=> root.col-w-status; col-min-w: 80px; col-max-w: 350px; }
+                                    KitColResizer { target-width <=> root.col-w-status; col-min-w: 80px; col-max-w: 350px; }
                                     ComboBox {
                                         width: root.col-w-branch;
                                         model: root.branch-options;
                                         current-value <=> root.col-branch-filter;
                                         selected => { root.column-filter-changed(); }
                                     }
-                                    ColResizer { target-width <=> root.col-w-branch; col-min-w: 50px; col-max-w: 250px; }
+                                    KitColResizer { target-width <=> root.col-w-branch; col-min-w: 50px; col-max-w: 250px; }
                                     ComboBox {
                                         width: root.col-w-commit;
                                         model: ["Commit: Neueste ↓", "Commit: Älteste ↑", "Heute (24h)", "Letzte 7 Tage", "Letzte 30 Tage", "> 30 Tage alt"];
                                         current-index <=> root.col-commit-filter;
                                         selected => { root.column-filter-changed(); }
                                     }
-                                    ColResizer { target-width <=> root.col-w-commit; col-min-w: 90px; col-max-w: 400px; }
+                                    KitColResizer { target-width <=> root.col-w-commit; col-min-w: 90px; col-max-w: 400px; }
                                     Text { text: "Letzte Änderung"; font-size: 11px; font-weight: 700; opacity: 0.85; width: root.col-w-change; horizontal-alignment: start; vertical-alignment: center; }
-                                    ColResizer { target-width <=> root.col-w-change; col-min-w: 80px; col-max-w: 350px; }
+                                    KitColResizer { target-width <=> root.col-w-change; col-min-w: 80px; col-max-w: 350px; }
                                     Text { text: "Commits"; font-size: 11px; font-weight: 700; opacity: 0.85; width: root.col-w-commits; horizontal-alignment: right; vertical-alignment: center; }
-                                    ColResizer { target-width <=> root.col-w-commits; col-min-w: 30px; col-max-w: 150px; }
+                                    KitColResizer { target-width <=> root.col-w-commits; col-min-w: 30px; col-max-w: 150px; }
                                     Text { text: "Dateien"; font-size: 11px; font-weight: 700; opacity: 0.85; width: root.col-w-files; horizontal-alignment: right; vertical-alignment: center; }
-                                    ColResizer { target-width <=> root.col-w-files; col-min-w: 30px; col-max-w: 150px; }
+                                    KitColResizer { target-width <=> root.col-w-files; col-min-w: 30px; col-max-w: 150px; }
                                     Text { text: "Git-Größe"; font-size: 11px; font-weight: 700; opacity: 0.85; width: root.col-w-size; horizontal-alignment: right; vertical-alignment: center; }
-                                    ColResizer { target-width <=> root.col-w-size; col-min-w: 40px; col-max-w: 150px; }
+                                    KitColResizer { target-width <=> root.col-w-size; col-min-w: 40px; col-max-w: 150px; }
                                     Text { text: "Build-Größe"; font-size: 11px; font-weight: 700; opacity: 0.85; width: root.col-w-build; horizontal-alignment: right; vertical-alignment: center; }
-                                    ColResizer { target-width <=> root.col-w-build; col-min-w: 40px; col-max-w: 180px; }
+                                    KitColResizer { target-width <=> root.col-w-build; col-min-w: 40px; col-max-w: 180px; }
                                     Text { text: "Orte"; font-size: 11px; font-weight: 700; opacity: 0.85; width: root.col-w-locations; horizontal-alignment: center; vertical-alignment: center; }
-                                    ColResizer { target-width <=> root.col-w-locations; col-min-w: 28px; col-max-w: 120px; }
+                                    KitColResizer { target-width <=> root.col-w-locations; col-min-w: 28px; col-max-w: 120px; }
                                     ComboBox {
                                         horizontal-stretch: 1;
                                         min-width: 120px;
@@ -1740,7 +1655,7 @@ export component MainWindow inherits Window {
                                             vertical-alignment: center;
                                             overflow: elide;
                                         }
-                                        ColSep {}
+                                        KitColSep {}
 
                                         // 2. Status & Änderungen Badge (mit Hover-Dateiliste)
                                         status-box := Rectangle {
@@ -1751,7 +1666,7 @@ export component MainWindow inherits Window {
                                             HorizontalLayout {
                                                 spacing: 4px;
                                                 alignment: start;
-                                                Badge {
+                                                KitBadge {
                                                     y: (parent.height - self.height) / 2;
                                                     text: repo.status;
                                                     kind: repo.kind;
@@ -1771,7 +1686,7 @@ export component MainWindow inherits Window {
                                             }
 
                                             // Tooltip-Card mit Dateiliste beim Hovern
-                                            if status-ta.has-hover && (repo.dirty-count > 0 || repo.dirty-files-preview != ""): HoverCard {
+                                            if status-ta.has-hover && (repo.dirty-count > 0 || repo.dirty-files-preview != ""): KitHoverCard {
                                                 row-index: idx;
                                                 card-x: 0px;
                                                 card-width: 380px;
@@ -1786,7 +1701,7 @@ export component MainWindow inherits Window {
                                                         color: AppTheme.accent;
                                                         horizontal-stretch: 1;
                                                     }
-                                                    if repo.stash-count > 0: Badge {
+                                                    if repo.stash-count > 0: KitBadge {
                                                         text: "📦 " + repo.stash-count + " Stash";
                                                         kind: 2;
                                                     }
@@ -1803,7 +1718,7 @@ export component MainWindow inherits Window {
                                                 }
                                             }
                                         }
-                                        ColSep {}
+                                        KitColSep {}
 
                                         // 3. Branch
                                         Text {
@@ -1813,7 +1728,7 @@ export component MainWindow inherits Window {
                                             vertical-alignment: center;
                                             overflow: elide;
                                         }
-                                        ColSep {}
+                                        KitColSep {}
 
                                         // 4. Letzter Commit (Hover & Klick für Details)
                                         commit-box := Rectangle {
@@ -1848,7 +1763,7 @@ export component MainWindow inherits Window {
                                             }
 
                                             // Tooltip-Card mit Commit-Details beim Hovern
-                                            if commit-ta.has-hover && repo.last-commit-hash != "": HoverCard {
+                                            if commit-ta.has-hover && repo.last-commit-hash != "": KitHoverCard {
                                                 row-index: idx;
                                                 card-x: 0px;
                                                 card-width: 380px;
@@ -1863,7 +1778,7 @@ export component MainWindow inherits Window {
                                                         color: AppTheme.accent;
                                                         horizontal-stretch: 1;
                                                     }
-                                                    Badge {
+                                                    KitBadge {
                                                         text: repo.last-commit-hash;
                                                         kind: 1;
                                                     }
@@ -1897,7 +1812,7 @@ export component MainWindow inherits Window {
                                                 }
                                             }
                                         }
-                                        ColSep {}
+                                        KitColSep {}
 
                                         // 5. Letzte Änderung (mtime oder Commit)
                                         change-box := Rectangle {
@@ -1918,7 +1833,7 @@ export component MainWindow inherits Window {
                                                 }
                                             }
                                         }
-                                        ColSep {}
+                                        KitColSep {}
 
                                         // 6. Anzahl Commits
                                         Text {
@@ -1928,7 +1843,7 @@ export component MainWindow inherits Window {
                                             horizontal-alignment: right;
                                             vertical-alignment: center;
                                         }
-                                        ColSep {}
+                                        KitColSep {}
 
                                         // 7. Anzahl Dateien
                                         Text {
@@ -1938,7 +1853,7 @@ export component MainWindow inherits Window {
                                             horizontal-alignment: right;
                                             vertical-alignment: center;
                                         }
-                                        ColSep {}
+                                        KitColSep {}
 
                                         // 8. Git-Größe (.git)
                                         Text {
@@ -1949,7 +1864,7 @@ export component MainWindow inherits Window {
                                             vertical-alignment: center;
                                             color: repo.size-kind == 2 ? AppTheme.danger : (repo.size-kind == 1 ? AppTheme.warning : AppTheme.success);
                                         }
-                                        ColSep {}
+                                        KitColSep {}
 
                                         // 9. Build-Größe
                                         Text {
@@ -1960,7 +1875,7 @@ export component MainWindow inherits Window {
                                             vertical-alignment: center;
                                             color: repo.build-kind == 2 ? AppTheme.danger : (repo.build-kind == 1 ? AppTheme.warning : AppTheme.text-muted);
                                         }
-                                        ColSep {}
+                                        KitColSep {}
 
                                         // 10. Orte (mit Hover-Pfadliste)
                                         locations-box := Rectangle {
@@ -1984,7 +1899,7 @@ export component MainWindow inherits Window {
                                             }
 
                                             // Tooltip-Card mit Standorten beim Hovern
-                                            if locations-ta.has-hover && repo.locations-preview != "": HoverCard {
+                                            if locations-ta.has-hover && repo.locations-preview != "": KitHoverCard {
                                                 row-index: idx;
                                                 card-x: 0px;
                                                 card-width: 360px;
@@ -2012,7 +1927,7 @@ export component MainWindow inherits Window {
                                                 }
                                             }
                                         }
-                                        ColSep {}
+                                        KitColSep {}
 
                                         // 11. Hinweis / Status / Remote-Feld (aufgeräumt mit Button)
                                         HorizontalLayout {
@@ -2038,12 +1953,12 @@ export component MainWindow inherits Window {
                                                     overflow: elide;
                                                 }
                                             }
-                                            if repo.error-msg == "" && repo.has-drift: Badge {
+                                            if repo.error-msg == "" && repo.has-drift: KitBadge {
                                                 text: "⇄ Drift";
                                                 kind: 2;
                                                 y: (parent.height - self.height) / 2;
                                             }
-                                            if repo.error-msg == "" && repo.remote == "": Badge {
+                                            if repo.error-msg == "" && repo.remote == "": KitBadge {
                                                 text: "💻 Lokal";
                                                 kind: 4;
                                                 y: (parent.height - self.height) / 2;
@@ -2335,8 +2250,8 @@ export component MainWindow inherits Window {
                                                         overflow: elide;
                                                         horizontal-stretch: 1;
                                                     }
-                                                    Badge { text: loc.label != "" ? loc.label : loc.role; kind: 1; y: (parent.height - self.height) / 2; }
-                                                    Badge { text: loc.status; kind: loc.kind; y: (parent.height - self.height) / 2; }
+                                                    KitBadge { text: loc.label != "" ? loc.label : loc.role; kind: 1; y: (parent.height - self.height) / 2; }
+                                                    KitBadge { text: loc.status; kind: loc.kind; y: (parent.height - self.height) / 2; }
                                                 }
 
                                                 // 2. Statuszeile: Branch, Ahead/Behind, Dirty, Build-Größe
@@ -2348,9 +2263,9 @@ export component MainWindow inherits Window {
                                                         font-weight: 600;
                                                         vertical-alignment: center;
                                                     }
-                                                    if loc.ahead > 0: Badge { text: "↑ " + loc.ahead; kind: 1; y: (parent.height - self.height) / 2; }
-                                                    if loc.behind > 0: Badge { text: "↓ " + loc.behind; kind: 2; y: (parent.height - self.height) / 2; }
-                                                    if loc.dirty > 0: Badge { text: "✎ " + loc.dirty; kind: 2; y: (parent.height - self.height) / 2; }
+                                                    if loc.ahead > 0: KitBadge { text: "↑ " + loc.ahead; kind: 1; y: (parent.height - self.height) / 2; }
+                                                    if loc.behind > 0: KitBadge { text: "↓ " + loc.behind; kind: 2; y: (parent.height - self.height) / 2; }
+                                                    if loc.dirty > 0: KitBadge { text: "✎ " + loc.dirty; kind: 2; y: (parent.height - self.height) / 2; }
                                                     if loc.build-size != "" && loc.build-size != "-" && loc.build-size != "–": Text {
                                                         text: "Build: " + loc.build-size;
                                                         font-size: 11px;
@@ -2439,7 +2354,7 @@ export component MainWindow inherits Window {
                                                             padding-left: 6px;
                                                             padding-right: 6px;
                                                             spacing: 6px;
-                                                            Badge { text: file.status-code; kind: file.kind; y: (parent.height - self.height) / 2; }
+                                                            KitBadge { text: file.status-code; kind: file.kind; y: (parent.height - self.height) / 2; }
                                                             Text {
                                                                 text: file.path;
                                                                 font-size: 11px;
@@ -2665,7 +2580,7 @@ export component MainWindow inherits Window {
                                                 padding-left: 6px;
                                                 padding-right: 6px;
                                                 spacing: 6px;
-                                                Badge { text: file.status-code; kind: file.kind; y: (parent.height - self.height) / 2; }
+                                                KitBadge { text: file.status-code; kind: file.kind; y: (parent.height - self.height) / 2; }
                                                 Text {
                                                     text: file.path;
                                                     font-size: 11px;

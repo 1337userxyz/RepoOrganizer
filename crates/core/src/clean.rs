@@ -16,14 +16,7 @@ pub struct RepoArtifacts {
 
 /// Rekursive Berechnung der Verzeichnisgröße in Bytes.
 pub fn dir_size(p: &Path) -> u64 {
-    let Ok(rd) = std::fs::read_dir(p) else { return 0 };
-    rd.flatten()
-        .map(|e| match e.file_type() {
-            Ok(t) if t.is_dir() => dir_size(&e.path()),
-            Ok(t) if t.is_file() => e.metadata().map(|m| m.len()).unwrap_or(0),
-            _ => 0,
-        })
-        .sum()
+    kit_fs::dir_size(p)
 }
 
 /// Findet typische Build-Ordner im gegebenen Repository.
@@ -368,15 +361,7 @@ pub fn clean_repo_artifacts_opt(root: &Path, keep_binary: bool) -> std::io::Resu
 
 /// Formatierung von Byte-Größen (z. B. "4.5 GB", "120 MB", "450 KB").
 pub fn format_bytes(bytes: u64) -> String {
-    if bytes == 0 {
-        "–".into()
-    } else if bytes < 1024 * 1024 {
-        format!("{} KB", bytes / 1024)
-    } else if bytes < 1024 * 1024 * 1024 {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-    } else {
-        format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
-    }
+    kit_fs::format_bytes(bytes)
 }
 
 /// Gibt freien und gesamten Speicherplatz für den Pfad zurück: `(free_bytes, total_bytes)`.

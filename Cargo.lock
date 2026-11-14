@@ -2417,17 +2417,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 
 [[package]]
-name = "kit-appdirs"
+name = "kit-dialog"
+version = "0.1.0"
+dependencies = [
+ "kit-fs",
+ "rfd",
+]
+
+[[package]]
+name = "kit-fs"
 version = "0.1.0"
 dependencies = [
  "directories",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
 name = "kit-launcher"
 version = "0.1.0"
 dependencies = [
- "kit-paths",
+ "kit-fs",
 ]
 
 [[package]]
@@ -2439,32 +2450,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "kit-paths"
-version = "0.1.0"
-dependencies = [
- "kit-appdirs",
- "serde",
-]
-
-[[package]]
-name = "kit-picker"
-version = "0.1.0"
-dependencies = [
- "kit-paths",
- "rfd",
- "slint",
-]
-
-[[package]]
 name = "kit-slint"
 version = "0.1.0"
 dependencies = [
+ "kit-dialog",
  "slint",
 ]
 
 [[package]]
 name = "kit-theme"
 version = "0.1.0"
+dependencies = [
+ "slint-build",
+]
 
 [[package]]
 name = "ksni"
@@ -3755,24 +3753,22 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 name = "repoorganizer"
 version = "0.1.0"
 dependencies = [
+ "kit-dialog",
  "kit-launcher",
  "kit-logging",
- "kit-picker",
  "kit-slint",
  "kit-theme",
  "log",
  "repoorganizer-core",
  "repoorganizer-git",
- "rfd",
  "slint",
- "slint-build",
 ]
 
 [[package]]
 name = "repoorganizer-core"
 version = "0.1.0"
 dependencies = [
- "kit-paths",
+ "kit-fs",
  "serde",
  "serde_json",
  "tempfile",
