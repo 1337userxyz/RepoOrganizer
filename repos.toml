@@ -13,6 +13,7 @@ id = "configurable-csv-analyzer-rust"
 name = "configurable-csv-analyzer-rust"
 remote_url = "https://github.com/1337userxyz/configurable-csv-analyzer-rust.git"
 clean_keep_binary = true
+sync_base_paths = true
 
 [[repo]]
 id = "configurablecsvanalyzer"
@@ -28,11 +29,13 @@ remote_url = "https://github.com/1337userxyz/GpoManagerMVVMGui.git"
 id = "local-agent-studio"
 name = "local-agent-studio"
 remote_url = "https://github.com/1337userxyz/local-agent-studio.git"
+sync_base_paths = true
 
 [[repo]]
 id = "net-atlas"
 name = "net-atlas"
 remote_url = "https://github.com/1337userxyz/net-atlas.git"
+sync_base_paths = true
 
 [[repo]]
 id = "networkdrivemanager"
@@ -48,22 +51,26 @@ remote_url = "https://github.com/1337userxyz/nixos-config.git"
 id = "pwsh7-scripts"
 name = "pwsh7-scripts"
 remote_url = "https://github.com/1337userxyz/pwsh7-scripts.git"
+sync_base_paths = true
 
 [[repo]]
 id = "repoorganizer"
 name = "RepoOrganizer"
 remote_url = "https://github.com/1337userxyz/RepoOrganizer.git"
 clean_keep_binary = true
+sync_base_paths = true
 
 [[repo]]
 id = "rust-kit"
 name = "rust-kit"
 remote_url = "https://github.com/1337userxyz/rust-kit.git"
+sync_base_paths = true
 
 [[repo]]
 id = "slint-desktop-kit"
 name = "slint-desktop-kit"
 remote_url = "https://github.com/1337userxyz/slint-desktop-kit.git"
+sync_base_paths = true
 
 [[repo]]
 id = "star-trek-skills"
