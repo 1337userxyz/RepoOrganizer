@@ -312,11 +312,13 @@ export component ScanWindow inherits Window {
 
 export component SettingsWindow inherits Window {
     title: "RepoOrganizer – Programmeinstellungen";
-    min-width: 920px;
-    min-height: 640px;
-    preferred-width: 980px;
-    preferred-height: 700px;
+    min-width: 700px;
+    min-height: 520px;
+    preferred-width: 820px;
+    preferred-height: 600px;
+    background: AppTheme.bg-surface;
 
+    in-out property <int> settings-tab: 0;
     in-out property <string> cfg-theme;
     in-out property <string> cfg-git-user;
     in-out property <string> cfg-git-path;
@@ -352,11 +354,20 @@ export component SettingsWindow inherits Window {
     callback close-window();
 
     VerticalLayout {
-        padding: 18px;
+        padding: 16px;
         spacing: 12px;
+
+        // Kopfzeile
         HorizontalLayout {
             spacing: 8px;
-            Text { text: "Programmeinstellungen"; font-size: 19px; font-weight: 700; horizontal-stretch: 1; vertical-alignment: center; }
+            Text {
+                text: "⚙ Programmeinstellungen";
+                font-size: AppTheme.font-size-xl;
+                font-weight: 700;
+                color: AppTheme.text-primary;
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+            }
             Button {
                 text: "Speichern & Schließen";
                 primary: true;
@@ -367,177 +378,285 @@ export component SettingsWindow inherits Window {
             }
             Button { text: "Schließen"; clicked => { root.close-window(); } }
         }
+
+        // Tab-Leiste
+        HorizontalLayout {
+            spacing: 6px;
+            Button { text: "Allgemein"; primary: root.settings-tab == 0; clicked => { root.settings-tab = 0; } }
+            Button { text: "Pfade & Mappings"; primary: root.settings-tab == 1; clicked => { root.settings-tab = 1; } }
+            Button { text: "GitHub-Token"; primary: root.settings-tab == 2; clicked => { root.settings-tab = 2; } }
+            Button { text: "Health-Checks"; primary: root.settings-tab == 3; clicked => { root.settings-tab = 3; } }
+            Rectangle { horizontal-stretch: 1; }
+        }
+
+        Rectangle { height: 1px; background: AppTheme.border; }
+
         ScrollView {
             vertical-stretch: 1;
             VerticalLayout {
                 spacing: 12px;
                 alignment: start;
-                HorizontalLayout {
-                    spacing: 18px;
-                    VerticalLayout {
-                        spacing: 8px;
-                        horizontal-stretch: 1;
-                        Text { text: "Allgemein (local.toml)"; font-weight: 700; font-size: 14px; }
-                        HorizontalLayout {
-                            spacing: 8px;
-                            Text { text: "Darstellung (Theme):"; width: 190px; vertical-alignment: center; }
-                            KitThemeSelector {
-                                mode <=> root.cfg-theme;
-                                changed(m) => {
-                                    root.theme-changed(m);
+
+                // Tab 0: Allgemein
+                if root.settings-tab == 0: VerticalLayout {
+                    spacing: 12px;
+                    Rectangle {
+                        background: AppTheme.bg-subtle;
+                        border-width: 1px;
+                        border-color: AppTheme.border;
+                        border-radius: AppTheme.radius-md;
+                        VerticalLayout {
+                            padding: 14px;
+                            spacing: 10px;
+                            Text { text: "Darstellung & Git-Defaults (local.toml)"; font-weight: 700; font-size: 14px; color: AppTheme.accent; }
+                            HorizontalLayout {
+                                spacing: 10px;
+                                Text { text: "Darstellung (Theme):"; width: 200px; vertical-alignment: center; color: AppTheme.text-secondary; }
+                                KitThemeSelector {
+                                    mode <=> root.cfg-theme;
+                                    changed(m) => { root.theme-changed(m); }
                                 }
                             }
-                        }
-                        HorizontalLayout {
-                            spacing: 8px;
-                            Text { text: "Git-User / Account:"; width: 190px; vertical-alignment: center; }
-                            LineEdit {
-                                text <=> root.cfg-git-user;
-                                placeholder-text: "z. B. mein-user (leitet https://github.com/<user>/<repo>.git ab)";
-                                horizontal-stretch: 1;
+                            HorizontalLayout {
+                                spacing: 10px;
+                                Text { text: "Git-User / Account:"; width: 200px; vertical-alignment: center; color: AppTheme.text-secondary; }
+                                LineEdit {
+                                    text <=> root.cfg-git-user;
+                                    placeholder-text: "z. B. mein-user (für github.com/<user>/<repo>.git)";
+                                    horizontal-stretch: 1;
+                                }
                             }
-                        }
-                        HorizontalLayout {
-                            spacing: 8px;
-                            Text { text: "Git-Pfad (leer = git):"; width: 190px; vertical-alignment: center; }
-                            LineEdit { text <=> root.cfg-git-path; placeholder-text: "git"; horizontal-stretch: 1; }
-                        }
-                        HorizontalLayout {
-                            spacing: 8px;
-                            Text { text: "Auto-Refresh (Sek., 0=aus):"; width: 190px; vertical-alignment: center; }
-                            LineEdit { text <=> root.cfg-refresh-secs; input-type: number; width: 110px; }
-                        }
-                        HorizontalLayout {
-                            spacing: 8px;
-                            Text { text: "Timeout Erreichbarkeit (Sek.):"; width: 190px; vertical-alignment: center; }
-                            LineEdit { text <=> root.cfg-timeout-secs; input-type: number; width: 110px; }
-                        }
-                        HorizontalLayout {
-                            spacing: 8px;
-                            Text { text: "Veraltet nach (Tage):"; width: 190px; vertical-alignment: center; }
-                            LineEdit { text <=> root.cfg-stale-days; input-type: number; width: 110px; }
-                        }
-                        Text { text: "Standard-Basispfade (repos.toml / Hauptkonfig)"; font-weight: 700; font-size: 14px; }
-                        HorizontalLayout {
-                            spacing: 8px;
-                            Text { text: "Geteilt Unix (z. B. /r/git):"; width: 190px; vertical-alignment: center; }
-                            LineEdit { text <=> root.cfg-shared-unix; placeholder-text: "/r/git"; horizontal-stretch: 1; }
-                            Button { text: "Wählen…"; clicked => { root.browse-base-path("shared_unix"); } }
-                            CheckBox { text: "Smart-Sync"; checked <=> root.cfg-sync-shared-unix; }
-                        }
-                        HorizontalLayout {
-                            spacing: 8px;
-                            Text { text: "Geteilt Windows (z. B. R:\\git):"; width: 190px; vertical-alignment: center; }
-                            LineEdit { text <=> root.cfg-shared-win; placeholder-text: "R:\\git"; horizontal-stretch: 1; }
-                            Button { text: "Wählen…"; clicked => { root.browse-base-path("shared_win"); } }
-                            CheckBox { text: "Smart-Sync"; checked <=> root.cfg-sync-shared-win; }
-                        }
-                        HorizontalLayout {
-                            spacing: 8px;
-                            Text { text: "Lokal Linux (z. B. ~/Projekte):"; width: 190px; vertical-alignment: center; }
-                            LineEdit { text <=> root.cfg-local-linux; placeholder-text: "/home/.../Projekte"; horizontal-stretch: 1; }
-                            Button { text: "Wählen…"; clicked => { root.browse-base-path("local_linux"); } }
-                            CheckBox { text: "Smart-Sync"; checked <=> root.cfg-sync-local-linux; }
-                        }
-                        HorizontalLayout {
-                            spacing: 8px;
-                            Text { text: "Lokal Windows (z. B. C:\\Projekte):"; width: 190px; vertical-alignment: center; }
-                            LineEdit { text <=> root.cfg-local-win; placeholder-text: "C:\\Projekte"; horizontal-stretch: 1; }
-                            Button { text: "Wählen…"; clicked => { root.browse-base-path("local_win"); } }
-                            CheckBox { text: "Smart-Sync"; checked <=> root.cfg-sync-local-win; }
-                        }
-
-                        Text { text: "Pfad-Mappings Windows ↔ Linux/macOS (repos.toml)"; font-weight: 700; font-size: 14px; }
-                        HorizontalLayout {
-                            spacing: 6px;
-                            mw := LineEdit { placeholder-text: "Windows, z. B. R:\\"; horizontal-stretch: 1; }
-                            mu := LineEdit { placeholder-text: "Unix, z. B. /mnt/r/"; horizontal-stretch: 1; }
-                            Button {
-                                text: "Hinzufügen";
-                                enabled: mw.text != "" && mu.text != "";
-                                clicked => { root.add-mapping(mw.text, mu.text); mw.text = ""; mu.text = ""; }
+                            HorizontalLayout {
+                                spacing: 10px;
+                                Text { text: "Git-Pfad (leer = git):"; width: 200px; vertical-alignment: center; color: AppTheme.text-secondary; }
+                                LineEdit { text <=> root.cfg-git-path; placeholder-text: "git"; horizontal-stretch: 1; }
                             }
-                        }
-                        for m[idx] in root.cfg-mappings: HorizontalLayout {
-                            spacing: 8px;
-                            Text { text: m.windows + "  ↔  " + m.unix; vertical-alignment: center; horizontal-stretch: 1; }
-                            Button { text: "Entfernen"; clicked => { root.remove-mapping(idx); } }
                         }
                     }
-                    VerticalLayout {
-                        spacing: 6px;
-                        width: 340px;
-                        Text { text: "Aktive Health-Checks"; font-weight: 700; font-size: 14px; }
-                        for chk in root.cfg-checks: CheckBox {
-                            text: chk.label;
-                            checked: chk.enabled;
-                            toggled => { root.toggle-health-check(chk.id); }
-                        }
 
-                        Rectangle { height: 1px; background: AppTheme.border; }
-                        Text { text: "GitHub-Token (lokal)"; font-weight: 700; font-size: 14px; }
-                        Rectangle {
-                            background: AppTheme.bg-subtle;
-                            border-width: 1px;
-                            border-color: AppTheme.border;
-                            border-radius: AppTheme.radius-md;
-                            VerticalLayout {
-                                padding: 10px;
-                                spacing: 6px;
-                                Text {
-                                    text: "Gespeichert: " + root.cfg-token-masked;
-                                    font-size: 12px;
-                                    font-weight: 600;
-                                    wrap: word-wrap;
+                    Rectangle {
+                        background: AppTheme.bg-subtle;
+                        border-width: 1px;
+                        border-color: AppTheme.border;
+                        border-radius: AppTheme.radius-md;
+                        VerticalLayout {
+                            padding: 14px;
+                            spacing: 10px;
+                            Text { text: "Intervalle & Schwellwerte"; font-weight: 700; font-size: 14px; color: AppTheme.accent; }
+                            HorizontalLayout {
+                                spacing: 10px;
+                                Text { text: "Auto-Refresh (Sek., 0 = aus):"; width: 200px; vertical-alignment: center; color: AppTheme.text-secondary; }
+                                LineEdit { text <=> root.cfg-refresh-secs; input-type: number; width: 120px; }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                            HorizontalLayout {
+                                spacing: 10px;
+                                Text { text: "Timeout Erreichbarkeit (Sek.):"; width: 200px; vertical-alignment: center; color: AppTheme.text-secondary; }
+                                LineEdit { text <=> root.cfg-timeout-secs; input-type: number; width: 120px; }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                            HorizontalLayout {
+                                spacing: 10px;
+                                Text { text: "Veraltet nach (Tage):"; width: 200px; vertical-alignment: center; color: AppTheme.text-secondary; }
+                                LineEdit { text <=> root.cfg-stale-days; input-type: number; width: 120px; }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                        }
+                    }
+                }
+
+                // Tab 1: Pfade & Mappings
+                if root.settings-tab == 1: VerticalLayout {
+                    spacing: 12px;
+                    Rectangle {
+                        background: AppTheme.bg-subtle;
+                        border-width: 1px;
+                        border-color: AppTheme.border;
+                        border-radius: AppTheme.radius-md;
+                        VerticalLayout {
+                            padding: 14px;
+                            spacing: 10px;
+                            Text { text: "Standard-Basispfade (repos.toml)"; font-weight: 700; font-size: 14px; color: AppTheme.accent; }
+                            Text {
+                                text: "Nur Basispfade mit aktivem „Smart-Sync“-Haken werden beim Smart-Sync automatisch mit fehlenden Repos befüllt.";
+                                font-size: 11px;
+                                color: AppTheme.text-muted;
+                                wrap: word-wrap;
+                            }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                Text { text: "Geteilt Unix:"; width: 130px; vertical-alignment: center; color: AppTheme.text-secondary; }
+                                LineEdit { text <=> root.cfg-shared-unix; placeholder-text: "/r/git"; horizontal-stretch: 1; }
+                                Button { text: "Wählen…"; clicked => { root.browse-base-path("shared_unix"); } }
+                                CheckBox { text: "Smart-Sync"; checked <=> root.cfg-sync-shared-unix; }
+                            }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                Text { text: "Geteilt Windows:"; width: 130px; vertical-alignment: center; color: AppTheme.text-secondary; }
+                                LineEdit { text <=> root.cfg-shared-win; placeholder-text: "R:\\git"; horizontal-stretch: 1; }
+                                Button { text: "Wählen…"; clicked => { root.browse-base-path("shared_win"); } }
+                                CheckBox { text: "Smart-Sync"; checked <=> root.cfg-sync-shared-win; }
+                            }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                Text { text: "Lokal Linux:"; width: 130px; vertical-alignment: center; color: AppTheme.text-secondary; }
+                                LineEdit { text <=> root.cfg-local-linux; placeholder-text: "/home/.../Projekte"; horizontal-stretch: 1; }
+                                Button { text: "Wählen…"; clicked => { root.browse-base-path("local_linux"); } }
+                                CheckBox { text: "Smart-Sync"; checked <=> root.cfg-sync-local-linux; }
+                            }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                Text { text: "Lokal Windows:"; width: 130px; vertical-alignment: center; color: AppTheme.text-secondary; }
+                                LineEdit { text <=> root.cfg-local-win; placeholder-text: "C:\\Projekte"; horizontal-stretch: 1; }
+                                Button { text: "Wählen…"; clicked => { root.browse-base-path("local_win"); } }
+                                CheckBox { text: "Smart-Sync"; checked <=> root.cfg-sync-local-win; }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        background: AppTheme.bg-subtle;
+                        border-width: 1px;
+                        border-color: AppTheme.border;
+                        border-radius: AppTheme.radius-md;
+                        VerticalLayout {
+                            padding: 14px;
+                            spacing: 10px;
+                            Text { text: "Pfad-Mappings Windows ↔ Linux/macOS (repos.toml)"; font-weight: 700; font-size: 14px; color: AppTheme.accent; }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                mw := LineEdit { placeholder-text: "Windows, z. B. R:\\"; horizontal-stretch: 1; }
+                                mu := LineEdit { placeholder-text: "Unix, z. B. /r/"; horizontal-stretch: 1; }
+                                Button {
+                                    text: "Hinzufügen";
+                                    primary: true;
+                                    enabled: mw.text != "" && mu.text != "";
+                                    clicked => { root.add-mapping(mw.text, mu.text); mw.text = ""; mu.text = ""; }
                                 }
-                                Text {
-                                    text: root.cfg-token-expiry-info;
-                                    font-size: 12px;
-                                    color: root.cfg-token-expiry-level == 3 ? AppTheme.danger : (root.cfg-token-expiry-level == 2 ? AppTheme.warning : (root.cfg-token-expiry-level == 1 ? AppTheme.success : AppTheme.text-muted));
-                                    wrap: word-wrap;
-                                }
+                            }
+                            for m[idx] in root.cfg-mappings: Rectangle {
+                                background: AppTheme.bg-surface;
+                                border-width: 1px;
+                                border-color: AppTheme.border;
+                                border-radius: AppTheme.radius-sm;
                                 HorizontalLayout {
-                                    spacing: 6px;
-                                    Text { text: "User:"; width: 82px; vertical-alignment: center; font-size: 12px; }
-                                    LineEdit { text <=> root.cfg-token-user; placeholder-text: "GitHub-Username"; horizontal-stretch: 1; }
+                                    padding-left: 10px;
+                                    padding-right: 6px;
+                                    padding-top: 4px;
+                                    padding-bottom: 4px;
+                                    spacing: 8px;
+                                    Text { text: m.windows + "  ↔  " + m.unix; vertical-alignment: center; horizontal-stretch: 1; color: AppTheme.text-primary; }
+                                    Button { text: "Entfernen"; clicked => { root.remove-mapping(idx); } }
                                 }
-                                HorizontalLayout {
-                                    spacing: 6px;
-                                    Text { text: "Token:"; width: 82px; vertical-alignment: center; font-size: 12px; }
-                                    LineEdit {
-                                        text <=> root.cfg-token-input;
-                                        input-type: password;
-                                        placeholder-text: "ghp_… (leer = nur Datum)";
-                                        horizontal-stretch: 1;
+                            }
+                        }
+                    }
+                }
+
+                // Tab 2: GitHub-Token
+                if root.settings-tab == 2: VerticalLayout {
+                    spacing: 12px;
+                    Rectangle {
+                        background: AppTheme.bg-subtle;
+                        border-width: 1px;
+                        border-color: AppTheme.border;
+                        border-radius: AppTheme.radius-md;
+                        VerticalLayout {
+                            padding: 14px;
+                            spacing: 10px;
+                            Text { text: "GitHub-Token (nur lokal gespeichert)"; font-weight: 700; font-size: 14px; color: AppTheme.accent; }
+                            Text {
+                                text: "Das Token wird lokal im Git-Credential-Store (~/.git-credentials) abgelegt und das Ablaufdatum in local.toml gespeichert – niemals in repos.toml.";
+                                font-size: 11px;
+                                color: AppTheme.text-muted;
+                                wrap: word-wrap;
+                            }
+                            Rectangle {
+                                background: root.cfg-token-expiry-level == 3 ? AppTheme.danger-bg : (root.cfg-token-expiry-level == 2 ? AppTheme.warning-bg : AppTheme.accent-bg);
+                                border-width: 1px;
+                                border-color: root.cfg-token-expiry-level == 3 ? AppTheme.danger : (root.cfg-token-expiry-level == 2 ? AppTheme.warning : AppTheme.border);
+                                border-radius: AppTheme.radius-sm;
+                                VerticalLayout {
+                                    padding: 10px;
+                                    spacing: 4px;
+                                    Text {
+                                        text: "Aktuelles Token: " + root.cfg-token-masked;
+                                        font-size: 12px;
+                                        font-weight: 700;
+                                        color: AppTheme.text-primary;
+                                        wrap: word-wrap;
+                                    }
+                                    Text {
+                                        text: root.cfg-token-expiry-info;
+                                        font-size: 12px;
+                                        color: root.cfg-token-expiry-level == 3 ? AppTheme.danger : (root.cfg-token-expiry-level == 2 ? AppTheme.warning : (root.cfg-token-expiry-level == 1 ? AppTheme.success : AppTheme.text-secondary));
+                                        wrap: word-wrap;
                                     }
                                 }
-                                HorizontalLayout {
-                                    spacing: 6px;
-                                    Text { text: "Läuft ab:"; width: 82px; vertical-alignment: center; font-size: 12px; }
-                                    LineEdit {
-                                        text <=> root.cfg-token-expires;
-                                        placeholder-text: "YYYY-MM-DD (optional)";
-                                        horizontal-stretch: 1;
-                                    }
+                            }
+                            HorizontalLayout {
+                                spacing: 10px;
+                                Text { text: "GitHub-User:"; width: 130px; vertical-alignment: center; color: AppTheme.text-secondary; }
+                                LineEdit { text <=> root.cfg-token-user; placeholder-text: "GitHub-Username"; horizontal-stretch: 1; }
+                            }
+                            HorizontalLayout {
+                                spacing: 10px;
+                                Text { text: "Neues Token:"; width: 130px; vertical-alignment: center; color: AppTheme.text-secondary; }
+                                LineEdit {
+                                    text <=> root.cfg-token-input;
+                                    input-type: password;
+                                    placeholder-text: "ghp_… (leer lassen = nur Ablaufdatum ändern)";
+                                    horizontal-stretch: 1;
                                 }
-                                HorizontalLayout {
-                                    spacing: 6px;
-                                    Button {
-                                        text: "Token speichern";
-                                        primary: true;
-                                        clicked => { root.save-github-token(root.cfg-token-user, root.cfg-token-input, root.cfg-token-expires); }
-                                    }
-                                    Button {
-                                        text: "Entfernen";
-                                        clicked => { root.remove-github-token(); }
-                                    }
+                            }
+                            HorizontalLayout {
+                                spacing: 10px;
+                                Text { text: "Ablaufdatum:"; width: 130px; vertical-alignment: center; color: AppTheme.text-secondary; }
+                                LineEdit {
+                                    text <=> root.cfg-token-expires;
+                                    placeholder-text: "YYYY-MM-DD (optional)";
+                                    horizontal-stretch: 1;
                                 }
-                                if root.cfg-token-feedback != "": Text {
-                                    text: root.cfg-token-feedback;
-                                    font-size: 11px;
-                                    color: AppTheme.text-muted;
-                                    wrap: word-wrap;
+                            }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                Button {
+                                    text: "Token speichern";
+                                    primary: true;
+                                    clicked => { root.save-github-token(root.cfg-token-user, root.cfg-token-input, root.cfg-token-expires); }
                                 }
+                                Button {
+                                    text: "Token entfernen";
+                                    clicked => { root.remove-github-token(); }
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                            if root.cfg-token-feedback != "": Text {
+                                text: root.cfg-token-feedback;
+                                font-size: 12px;
+                                color: AppTheme.accent;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+                }
+
+                // Tab 3: Health-Checks
+                if root.settings-tab == 3: VerticalLayout {
+                    spacing: 12px;
+                    Rectangle {
+                        background: AppTheme.bg-subtle;
+                        border-width: 1px;
+                        border-color: AppTheme.border;
+                        border-radius: AppTheme.radius-md;
+                        VerticalLayout {
+                            padding: 14px;
+                            spacing: 8px;
+                            Text { text: "Aktive Health-Checks"; font-weight: 700; font-size: 14px; color: AppTheme.accent; }
+                            for chk in root.cfg-checks: CheckBox {
+                                text: chk.label;
+                                checked: chk.enabled;
+                                toggled => { root.toggle-health-check(chk.id); }
                             }
                         }
                     }
