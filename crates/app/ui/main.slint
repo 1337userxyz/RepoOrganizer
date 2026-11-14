@@ -327,6 +327,10 @@ export component SettingsWindow inherits Window {
     in-out property <string> cfg-shared-unix;
     in-out property <string> cfg-local-linux;
     in-out property <string> cfg-local-win;
+    in-out property <bool> cfg-sync-shared-win;
+    in-out property <bool> cfg-sync-shared-unix;
+    in-out property <bool> cfg-sync-local-linux;
+    in-out property <bool> cfg-sync-local-win;
     in property <[MappingRow]> cfg-mappings;
     in property <[CheckRow]> cfg-checks;
 
@@ -410,24 +414,28 @@ export component SettingsWindow inherits Window {
                             Text { text: "Geteilt Unix (z. B. /r/git):"; width: 190px; vertical-alignment: center; }
                             LineEdit { text <=> root.cfg-shared-unix; placeholder-text: "/r/git"; horizontal-stretch: 1; }
                             Button { text: "Wählen…"; clicked => { root.browse-base-path("shared_unix"); } }
+                            CheckBox { text: "Smart-Sync"; checked <=> root.cfg-sync-shared-unix; }
                         }
                         HorizontalLayout {
                             spacing: 8px;
                             Text { text: "Geteilt Windows (z. B. R:\\git):"; width: 190px; vertical-alignment: center; }
                             LineEdit { text <=> root.cfg-shared-win; placeholder-text: "R:\\git"; horizontal-stretch: 1; }
                             Button { text: "Wählen…"; clicked => { root.browse-base-path("shared_win"); } }
+                            CheckBox { text: "Smart-Sync"; checked <=> root.cfg-sync-shared-win; }
                         }
                         HorizontalLayout {
                             spacing: 8px;
                             Text { text: "Lokal Linux (z. B. ~/Projekte):"; width: 190px; vertical-alignment: center; }
                             LineEdit { text <=> root.cfg-local-linux; placeholder-text: "/home/.../Projekte"; horizontal-stretch: 1; }
                             Button { text: "Wählen…"; clicked => { root.browse-base-path("local_linux"); } }
+                            CheckBox { text: "Smart-Sync"; checked <=> root.cfg-sync-local-linux; }
                         }
                         HorizontalLayout {
                             spacing: 8px;
                             Text { text: "Lokal Windows (z. B. C:\\Projekte):"; width: 190px; vertical-alignment: center; }
                             LineEdit { text <=> root.cfg-local-win; placeholder-text: "C:\\Projekte"; horizontal-stretch: 1; }
                             Button { text: "Wählen…"; clicked => { root.browse-base-path("local_win"); } }
+                            CheckBox { text: "Smart-Sync"; checked <=> root.cfg-sync-local-win; }
                         }
 
                         Text { text: "Pfad-Mappings Windows ↔ Linux/macOS (repos.toml)"; font-weight: 700; font-size: 14px; }
@@ -2501,18 +2509,16 @@ export component MainWindow inherits Window {
                                             clicked => { root.publish-remote(root.selected-id, remote-edit.text, true); }
                                         }
                                     }
-                                    HorizontalLayout {
+                                    if root.selected-id != "" && root.selected-remote == "": HorizontalLayout {
                                         spacing: 6px;
                                         height: 28px;
                                         Text { text: "Neu auf GitHub:"; font-size: 11px; font-weight: 600; width: 84px; vertical-alignment: center; }
                                         Button {
                                             text: "Privat erstellen & Push";
-                                            enabled: root.selected-id != "";
                                             clicked => { root.publish-github(root.selected-id, true); }
                                         }
                                         Button {
                                             text: "Öffentlich erstellen & Push";
-                                            enabled: root.selected-id != "";
                                             clicked => { root.publish-github(root.selected-id, false); }
                                         }
                                     }

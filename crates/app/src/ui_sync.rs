@@ -869,6 +869,10 @@ pub fn sync_settings_fields(cfgw: &SettingsWindow, st: &State) {
     cfgw.set_cfg_shared_unix(bp.shared_unix.clone().unwrap_or_default().into());
     cfgw.set_cfg_local_linux(bp.local_linux.clone().unwrap_or_default().into());
     cfgw.set_cfg_local_win(bp.local_windows.clone().unwrap_or_default().into());
+    cfgw.set_cfg_sync_shared_win(bp.sync_shared_windows);
+    cfgw.set_cfg_sync_shared_unix(bp.sync_shared_unix);
+    cfgw.set_cfg_sync_local_linux(bp.sync_local_linux);
+    cfgw.set_cfg_sync_local_win(bp.sync_local_windows);
 }
 
 pub fn init_smart_sync_options(ssw: &SmartSyncWindow, st: &State) {
