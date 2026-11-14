@@ -343,7 +343,11 @@ pub fn run_clone(ui: &MainWindow, state: &Shared, url: String, dest: String, rep
     let (weak, state) = (ui.as_weak(), state.clone());
     std::thread::spawn(move || {
         let git = CliGit::new(git_path.as_deref());
-        let res = git.clone_repo(&url, Path::new(&dest)).map_err(|e| e.to_string());
+        let dest_path = Path::new(&dest);
+        if let Some(parent) = dest_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let res = git.clone_repo(&url, dest_path).map_err(|e| e.to_string());
         let _ = slint::invoke_from_event_loop(move || {
             let Some(ui) = weak.upgrade() else { return };
             {

@@ -47,6 +47,7 @@ pub struct MissingClone {
     pub target_path: String,
     pub source: String,
     pub exists_on_disk: bool,
+    pub already_in_config: bool,
 }
 
 #[derive(Clone)]
@@ -224,39 +225,30 @@ pub fn plan_smart_sync(st: &State) -> SmartSyncPlan {
         }
     }
 
-    // 2. Fehlende Basispfade berechnen
+    // 2. Fehlende Basispfade berechnen (auch wenn der Basispfad-Ordner z. B. auf einer RAM-Disk noch nicht angelegt ist, aber der Mountpoint existiert)
+    fn base_path_available(p: &Path) -> bool {
+        if p.is_dir() {
+            return true;
+        }
+        if p.exists() {
+            return false;
+        }
+        p.parent().is_some_and(|parent| parent.is_dir())
+    }
+
     let bp = &st.shared.base_paths;
     let os = st.os;
-    let mut active_bps: Vec<&str> = Vec::new();
-    if os != Os::Windows {
-        if let Some(su) = &bp.shared_unix {
-            let t = su.trim();
-            if !t.is_empty() && Path::new(t).exists() {
-                active_bps.push(t);
-            }
-        }
-        if os == Os::Linux {
-            if let Some(ll) = &bp.local_linux {
-                let t = ll.trim();
-                if !t.is_empty() && Path::new(t).exists() {
-                    active_bps.push(t);
-                }
-            }
-        }
-    } else {
-        if let Some(sw) = &bp.shared_windows {
-            let t = sw.trim();
-            if !t.is_empty() && Path::new(t).exists() {
-                active_bps.push(t);
-            }
-        }
-        if let Some(lw) = &bp.local_windows {
-            let t = lw.trim();
-            if !t.is_empty() && Path::new(t).exists() {
-                active_bps.push(t);
-            }
-        }
-    }
+    let candidates: Vec<Option<&str>> = match os {
+        Os::Windows => vec![bp.shared_windows.as_deref(), bp.local_windows.as_deref()],
+        Os::Linux => vec![bp.shared_unix.as_deref(), bp.local_linux.as_deref()],
+        Os::MacOs => vec![bp.shared_unix.as_deref()],
+    };
+    let active_bps: Vec<&str> = candidates
+        .into_iter()
+        .flatten()
+        .map(str::trim)
+        .filter(|t| !t.is_empty() && base_path_available(Path::new(t)))
+        .collect();
 
     for r in &st.shared.repos {
         let clone_source = if !r.remote_url.trim().is_empty() {
@@ -273,8 +265,10 @@ pub fn plan_smart_sync(st: &State) -> SmartSyncPlan {
         for base in &active_bps {
             let sep = if os == Os::Windows { "\\" } else { "/" };
             let target_path = format!("{base}{sep}{}", r.name);
-            let exists = st.shared.locations_of(&r.id).any(|l| match resolved(st, l) {
-                Resolved::Local(p) => p == Path::new(&target_path),
+            let target_p = Path::new(&target_path);
+            let exists_on_disk = target_p.join(".git").exists() || target_p.is_dir();
+            let in_config = st.shared.locations_of(&r.id).any(|l| match resolved(st, l) {
+                Resolved::Local(p) => p == target_p,
                 _ => {
                     if os == Os::Windows {
                         l.paths.windows.as_deref() == Some(&target_path)
@@ -283,15 +277,14 @@ pub fn plan_smart_sync(st: &State) -> SmartSyncPlan {
                     }
                 }
             });
-            if !exists {
-                let target_p = Path::new(&target_path);
-                let exists_on_disk = target_p.join(".git").exists() || target_p.is_dir();
+            if !exists_on_disk || !in_config {
                 missing_clones.push(MissingClone {
                     repo_id: r.id.clone(),
                     repo_name: r.name.clone(),
                     target_path,
                     source: src.clone(),
                     exists_on_disk,
+                    already_in_config: in_config,
                 });
             }
         }
@@ -343,6 +336,8 @@ pub fn plan_smart_sync(st: &State) -> SmartSyncPlan {
             path: format!("→ {}  (Quelle: {})", c.target_path, c.source).into(),
             info: if c.exists_on_disk {
                 "Ordner verknüpfen".into()
+            } else if c.already_in_config {
+                "Fehlenden Ordner klonen".into()
             } else {
                 "Klonen".into()
             },
@@ -939,25 +934,38 @@ pub fn run_smart_sync(
                     format!("Klone von {}…", item.source),
                 );
 
+                if let Some(parent) = target_p.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
                 let res = git.clone_repo(&item.source, target_p).map_err(|e| e.to_string());
                 let res_ok = res.is_ok();
                 if res_ok {
-                    any_linked = true;
                     ok_count += 1;
-                    let mut st = state_clone.lock().unwrap();
-                    link_location(&mut st.shared, os, &item.repo_id, &item.target_path, "");
-                    save_shared(&mut st);
+                    if !item.already_in_config {
+                        any_linked = true;
+                        let mut st = state_clone.lock().unwrap();
+                        link_location(&mut st.shared, os, &item.repo_id, &item.target_path, "");
+                        save_shared(&mut st);
+                    }
                 } else {
                     warn_count += 1;
                 }
                 let elapsed = t0.elapsed().as_secs_f32();
                 let src_str = item.source.clone();
+                let already_in_cfg = item.already_in_config;
                 let (w, s, r_val) = (weak.clone(), state_clone.clone(), res);
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(ui) = w.upgrade() else { return };
                     let mut st = s.lock().unwrap();
                     let (st_code, detail_msg) = match &r_val {
-                        Ok(_) => (1, format!("Geklont von {src_str} & verknüpft · {elapsed:.1}s")),
+                        Ok(_) => (
+                            1,
+                            if already_in_cfg {
+                                format!("Geklont von {src_str} · {elapsed:.1}s")
+                            } else {
+                                format!("Geklont von {src_str} & verknüpft · {elapsed:.1}s")
+                            },
+                        ),
                         Err(e) => (2, format!("{e} ({elapsed:.1}s)")),
                     };
                     if let Some(t) = st.tasks.iter_mut().find(|t| t.id == task_id) {
