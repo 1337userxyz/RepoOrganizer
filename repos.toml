@@ -35,6 +35,7 @@ sync_base_paths = true
 id = "net-atlas"
 name = "net-atlas"
 remote_url = "https://github.com/1337userxyz/net-atlas.git"
+clean_keep_binary = true
 sync_base_paths = true
 
 [[repo]]
