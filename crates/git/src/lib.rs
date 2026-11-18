@@ -9,6 +9,18 @@ pub mod facts;
 pub mod scan;
 pub use parse::{parse_status_v2, StatusInfo};
 
+/// Unterdrückt unter Windows das Aufblitzen von Konsolenfenstern (`CREATE_NO_WINDOW`),
+/// wenn das Hauptprogramm als GUI-Subsystem (`windows_subsystem = "windows"`) läuft.
+pub fn no_window(cmd: &mut Command) -> &mut Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum GitError {
     #[error("Git konnte nicht gestartet werden: {0}")]
@@ -39,7 +51,14 @@ impl CliGit {
     }
 
     fn run(&self, repo: &Path, args: &[&str]) -> Result<String, GitError> {
-        let out = Command::new(&self.git_path).args(["-c", "safe.directory=*"]).arg("-C").arg(repo).args(args).output()?;
+        let out = no_window(&mut Command::new(&self.git_path))
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .env("GCM_INTERACTIVE", "never")
+            .args(["-c", "safe.directory=*"])
+            .arg("-C")
+            .arg(repo)
+            .args(args)
+            .output()?;
         if out.status.success() {
             Ok(String::from_utf8_lossy(&out.stdout).into_owned())
         } else {
@@ -263,7 +282,9 @@ impl CliGit {
 
     pub fn trust_directory(&self, repo: &Path) -> Result<String, GitError> {
         let p = repo.to_string_lossy().replace('\\', "/");
-        let out = Command::new(&self.git_path).args(["config", "--global", "--add", "safe.directory", &p]).output()?;
+        let out = no_window(&mut Command::new(&self.git_path))
+            .args(["config", "--global", "--add", "safe.directory", &p])
+            .output()?;
         combine(out, "config safe.directory")
     }
 
@@ -272,7 +293,7 @@ impl CliGit {
         if cfg!(windows) {
             let p = repo.to_string_lossy().to_string();
             let user = std::env::var("USERNAME").unwrap_or_else(|_| "CURRENT_USER".into());
-            let out = Command::new("icacls")
+            let out = no_window(&mut Command::new("icacls"))
                 .args([&p, "/setowner", &user, "/T", "/C", "/Q"])
                 .output()?;
             combine(out, "icacls /setowner")
@@ -293,7 +314,7 @@ impl CliGit {
     /// Liest global konfigurierten Git-/GitHub-Benutzernamen aus (`github.user` oder `user.name`).
     pub fn global_git_user(&self) -> Option<String> {
         for key in ["github.user", "user.username", "user.name"] {
-            if let Ok(out) = Command::new(&self.git_path).args(["config", "--global", "--get", key]).output() {
+            if let Ok(out) = no_window(&mut Command::new(&self.git_path)).args(["config", "--global", "--get", key]).output() {
                 if out.status.success() {
                     let val = String::from_utf8_lossy(&out.stdout).trim().to_string();
                     if !val.is_empty() && !val.contains(' ') {
@@ -339,8 +360,10 @@ impl CliGit {
     /// Fragt Git Credential Manager nach Zugangsdaten für github.com (Liefert Personal Access Token / OAuth Token).
     pub fn github_token(&self) -> Option<String> {
         use std::io::Write;
-        let mut child = Command::new(&self.git_path)
+        let mut child = no_window(&mut Command::new(&self.git_path))
             .args(["credential", "fill"])
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .env("GCM_INTERACTIVE", "never")
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
@@ -372,7 +395,7 @@ impl CliGit {
             stderr: "Kein GitHub-Token im Git Credential Manager gefunden. Bitte Git-Anmeldedaten für github.com hinterlegen oder GitHub CLI (gh) installieren.".into(),
         })?;
         let payload = format!(r#"{{"name":"{}","private":{}}}"#, name.trim(), private);
-        let out = Command::new("curl")
+        let out = no_window(&mut Command::new("curl"))
             .args([
                 "-s",
                 "-X", "POST",
@@ -404,7 +427,7 @@ impl CliGit {
     pub fn publish_github(&self, repo: &Path, name: &str, private: bool) -> Result<String, GitError> {
         let vis = if private { "--private" } else { "--public" };
         // 1. Zuerst gh probieren, falls installiert
-        let gh_res = Command::new("gh")
+        let gh_res = no_window(&mut Command::new("gh"))
             .current_dir(repo)
             .args(["repo", "create", name.trim(), vis, "--source=.", "--remote=origin", "--push"])
             .output();
@@ -424,13 +447,23 @@ impl CliGit {
     }
 
     pub fn clone_repo(&self, url: &str, dest: &Path) -> Result<String, GitError> {
-        let out = Command::new(&self.git_path).args(["-c", "safe.directory=*"]).arg("clone").arg(url).arg(dest).output()?;
+        let out = no_window(&mut Command::new(&self.git_path))
+            .args(["-c", "safe.directory=*"])
+            .arg("clone")
+            .arg(url)
+            .arg(dest)
+            .output()?;
         combine(out, "clone")
     }
 
     /// Wie `run`, liefert aber stdout+stderr (git schreibt Fortschritt nach stderr).
     fn run_all(&self, repo: &Path, args: &[&str]) -> Result<String, GitError> {
-        let out = Command::new(&self.git_path).args(["-c", "safe.directory=*"]).arg("-C").arg(repo).args(args).output()?;
+        let out = no_window(&mut Command::new(&self.git_path))
+            .args(["-c", "safe.directory=*"])
+            .arg("-C")
+            .arg(repo)
+            .args(args)
+            .output()?;
         combine(out, &args.join(" "))
     }
 }

@@ -14,9 +14,12 @@ use crate::{AppTheme, MainWindow, SettingsWindow};
 
 fn run_git_credential(git_path: Option<&str>, subcmd: &str, stdin_payload: &str) -> Result<String, String> {
     let bin = git_path.unwrap_or("git");
-    let mut child = Command::new(bin)
+    let mut cmd = Command::new(bin);
+    repoorganizer_git::no_window(&mut cmd);
+    let mut child = cmd
         .args(["credential", subcmd])
         .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GCM_INTERACTIVE", "never")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

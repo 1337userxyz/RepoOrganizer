@@ -22,7 +22,14 @@ impl Default for FactOptions {
 
 /// Führt einen Befehl mit Timeout aus; `Some(success)` oder `None` bei Start-/Timeout-Fehler.
 fn run_timeout(mut cmd: Command, timeout: Duration) -> Option<bool> {
-    let mut child = cmd.env("GIT_TERMINAL_PROMPT", "0").stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().ok()?;
+    let mut child = crate::no_window(&mut cmd)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GCM_INTERACTIVE", "never")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
     let start = Instant::now();
     loop {
         match child.try_wait() {
