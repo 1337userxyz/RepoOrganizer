@@ -9,6 +9,11 @@ shared_unix = "/r/git"
 local_linux = "/home/tristan/Projekte"
 
 [[repo]]
+id = "admin-workbench"
+name = "admin-workbench"
+remote_url = "https://github.com/1337userxyz/admin-workbench.git"
+
+[[repo]]
 id = "configurable-csv-analyzer-rust"
 name = "configurable-csv-analyzer-rust"
 remote_url = "https://github.com/1337userxyz/configurable-csv-analyzer-rust.git"
@@ -82,6 +87,17 @@ remote_url = "/home/tristan/Projekte/star-trek-skills"
 id = "startrekcomputer"
 name = "StarTrekComputer"
 remote_url = "https://github.com/1337userxyz/StarTrekComputer.git"
+
+[[location]]
+id = "admin-workbench-1"
+repo_id = "admin-workbench"
+label = "admin-workbench"
+role = "primary"
+
+[location.paths]
+windows = 'R:\git\admin-workbench'
+linux = "/r/git/admin-workbench"
+macos = "/r/git/admin-workbench"
 
 [[location]]
 id = "configurable-csv-analyzer-rust-1"
