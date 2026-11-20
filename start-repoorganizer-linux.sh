@@ -13,6 +13,7 @@ PARENT_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 
 # === Standardwerte (falls starter-settings.conf fehlt) ===
 DEFAULT_PROFILE="release"
+TARGET_DIRS_LINUX_R="/r/cargo-target;{HOME}/.cache/cargo-target/{APP}"
 TARGET_DIRS_LINUX="{SCRIPT_DIR}/target;{HOME}/.cache/cargo-target/{APP}"
 MIN_FREE_MB_FOR_TARGET=1024
 KIT_SEARCH_DIRS_LINUX="{PARENT};{HOME}/Projekte;/r/git;{HOME}/git"
@@ -123,8 +124,12 @@ fi
 
 # === 2. Build-Zielverzeichnis (CARGO_TARGET_DIR) mit Fallback bestimmen ===
 resolve_target_dir() {
+    local target_spec="$TARGET_DIRS_LINUX"
+    if [[ "$SCRIPT_DIR" == /r/* && -n "${TARGET_DIRS_LINUX_R:-}" ]]; then
+        target_spec="$TARGET_DIRS_LINUX_R"
+    fi
     local target_dirs
-    target_dirs="$(expand_placeholders "$TARGET_DIRS_LINUX")"
+    target_dirs="$(expand_placeholders "$target_spec")"
     IFS=';' read -ra CANDS <<< "$target_dirs"
     for cand in "${CANDS[@]}"; do
         [[ -z "$cand" ]] && continue

@@ -15,6 +15,7 @@ if "%PARENT_DIR:~-1%"=="\" set "PARENT_DIR=%PARENT_DIR:~0,-1%"
 
 REM === Standardwerte (falls starter-settings.conf fehlt) ===
 set "DEFAULT_PROFILE=release"
+set "TARGET_DIRS_WIN_R=R:\cargo-target;C:\cargo-target\{APP}"
 set "TARGET_DIRS_WIN={SCRIPT_DIR}\target;C:\cargo-target\{APP}"
 set "MIN_FREE_MB_FOR_TARGET=1024"
 set "KIT_SEARCH_DIRS_WIN={PARENT};{USERPROFILE}\Projekte;R:\git;C:\git"
@@ -255,6 +256,9 @@ echo [Fehler] Benoetigtes Kit '%KIT_NAME%' wurde in keinem Suchpfad gefunden (%K
 exit /b 1
 
 :resolve_target_dir
+if /I "%SCRIPT_DIR:~0,3%"=="R:\" (
+    if defined TARGET_DIRS_WIN_R set "TARGET_DIRS_WIN=%TARGET_DIRS_WIN_R%"
+)
 call :expand_placeholders TARGET_DIRS_WIN
 set "SELECTED_TARGET="
 for %%T in ("%TARGET_DIRS_WIN:;=" "%") do (
